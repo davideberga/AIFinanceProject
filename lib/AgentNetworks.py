@@ -99,6 +99,6 @@ class AgentGRUNetwork(AgentNetwork):
     def forward(self,x):
         x = torch.transpose(x, 0, 1)
         x, h = self.gru(x, self.initial_hidden)
-        x = self.relu(self.fc_1(x.reshape(x.shape[0], -1)))
+        x = self.relu(self.fc_1(x[-1]))
         x = self.relu(self.fc_2(x))
         return self.fc_out(x)
