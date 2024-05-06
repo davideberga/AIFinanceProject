@@ -1,7 +1,7 @@
 from typing import List
 from pandas import read_csv
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 class IVVDataset(Dataset):
     def __init__(self, file_csv, colums_to_drop=[]):
