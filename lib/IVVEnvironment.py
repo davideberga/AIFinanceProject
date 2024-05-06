@@ -8,8 +8,8 @@ import torch
 
 class Actions(Enum):
     HOLD = 0
-    SELL = 1
-    BUY = 2
+    BUY = 1
+    SELL = 2
 
 class Positions(Enum):
     SHORT = 0
@@ -74,12 +74,12 @@ class IVVEnvironment(gym.Env):
         observation = self._get_observation(self.episode_minute)
         
         reward = 0
-        if action == 1:
+        if action == Actions.BUY.value and len(self.inventory) == 0:
             self.inventory.append(current_price)
             self.when_bought.append(self.episode_minute)
             self.buy_sell_order.append('BUY')
 
-        elif action == 2 and len(self.inventory) > 0:
+        elif (action == Actions.SELL.value or done) and len(self.inventory) > 0: # If done sell automatically the last asset bought
             bought_price = self.inventory.pop(0)      
             reward = current_price - bought_price
             self.total_profit += current_price - bought_price
