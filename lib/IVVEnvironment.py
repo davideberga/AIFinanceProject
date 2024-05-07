@@ -53,6 +53,11 @@ class IVVEnvironment(gym.Env):
         self.inventory = []
         self.when_sold = []
         self.when_bought = []
+        self.positive_trades = 0
+        self.profit_or_loss = []
+
+        self.inital_capital = 10000
+        self.capital = self.inital_capital
 
         self.buy_sell_order = []
 
@@ -72,30 +77,77 @@ class IVVEnvironment(gym.Env):
 
         done = self.episode_minute == episode_length -1
         observation = self._get_observation(self.episode_minute)
+        if done and len(self.inventory) > 0: action = 1 if self.inventory[0][0] == 2 else 2
         
         reward = 0
-        if action == Actions.BUY.value and len(self.inventory) == 0:
-            self.inventory.append(current_price)
+        if action == Actions.BUY.value:
             self.when_bought.append(self.episode_minute)
             self.buy_sell_order.append('BUY')
-
-        elif (action == Actions.SELL.value or done) and len(self.inventory) > 0: # If done sell automatically the last asset bought
-            bought_price = self.inventory.pop(0)      
-            reward = current_price - bought_price
-            self.total_profit += current_price - bought_price
+        elif (action == Actions.SELL.value or done):
             self.when_sold.append(self.episode_minute)
-            self.buy_sell_order.append('SELL')
+            self.buy_sell_order.append('SELL') 
+
+        reward, profit_loss = self.update_reward(current_price, action)
+        self.positive_trades += int(profit_loss > 0)
+        self.total_profit += profit_loss
+            
+        #Calculate transactional costs for each trade
+        #transaction_costs = self._calculate_transaction_costs(current_price, 1, 1)
+
+        #Calculate Net Return metric
+        netReturn = self.total_profit #- transaction_costs
 
         info = {
             'total_profit' : self.total_profit,
             'when_sold': self.when_sold,
             'when_bought': self.when_bought,
             'buy_sell_order': self.buy_sell_order,
+            "positive_trades": self.positive_trades,
+            "net_return": netReturn
         }
 
         self.episode_minute += 1
 
         return observation, reward, done, info
+    
+    def update_reward(self, price, action):
+        reward = 0
+        profit_loss = 0
+
+        if action == Actions.BUY.value:  # Buy
+            if len(self.inventory) == 0:  # non ho posizioni aperte 
+                self.inventory.append((Actions.BUY.value, price)) # aggiungo una posizione, con 1 l'azione buy e price il prezzo a cui ho comprato
+            else: # ho già una posizione aperta, controllo qual è questa posizione
+                action_done, position_open_price = self.inventory.pop(0)
+                if action_done == Actions.SELL.value: # se posizione aperta di sell, va bene
+                    reward, profit_loss = self.compute_reward(price, position_open_price, action)
+                elif action_done == Actions.BUY.value: # se posizione aperta di buy, non va bene
+                    reward = -100 # perdo totalmente i soldi di quell'azione
+        
+        elif action == Actions.SELL.value:  # Sell
+            if len(self.inventory) == 0:  # non ho posizioni aperte
+                self.inventory.append(( Actions.SELL.value, price))
+            else: # ho già una posizione aperta
+                action_done, position_open_price = self.inventory.pop(0)
+                if action_done ==  Actions.BUY.value: # se posizione aperta di buy, va bene
+                    reward, profit_loss = self.compute_reward(price, position_open_price, action)
+                elif action_done ==  Actions.SELL.value: # se posizione aperta di sell, non va bene
+                    reward = -100 # perdo totalmente i soldi di quell'azione
+
+        return reward, profit_loss
+
+    def compute_reward(self, price, open_price, action):
+        if action == 1:  # Buy
+            profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
+        elif action == 2:  # Sell
+            profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
+        
+        profit_loss = profit_loss - 0.01 * price # 1% del prezzo a quell'istante, quando si chiude la posizione
+        risk = abs(profit_loss)
+        
+        reward = profit_loss - 0.5 * risk  # penalizziamo il rischio del 50%
+        
+        return 100 * reward, profit_loss
     
     def _get_observation(self, current_minute):    
         data = self.dataset[self.day_number].squeeze()
@@ -112,6 +164,27 @@ class IVVEnvironment(gym.Env):
             res.append(block[i + 1].cpu().numpy() - block[i].cpu().numpy())
 
         return torch.transpose(torch.tensor(res).to(self.device), 0, 1)
+    
+    def _calculate_transaction_costs(trade_sizes, commission_rate, spread):
+        # trade_sizes: tensor of trade sizes (batch_size, 1)
+        # commission_rate: scalar representing the commission rate per trade
+        # spread: scalar representing the bid-ask spread --> The difference between the bid and ask prices of a security. 
+        #                                                    When traders buy at the ask price and sell at the bid price, 
+        #                                                    they incur a cost equal to the spread.
+
+        # Calculate commission costs
+        commission_costs = trade_sizes * commission_rate
+
+        # Calculate spread costs
+        spread_costs = trade_sizes * spread
+
+        # Total transactional costs
+        total_costs = commission_costs + spread_costs
+        # total_transaction_costs = 0
+        # for c in total_costs:
+        #     total_transaction_costs += c
+
+        return total_costs
     
     def there_is_another_episode(self):
         return self.day_number <= len(self.dataloader) - 1
@@ -130,6 +203,10 @@ class IVVEnvironment(gym.Env):
         self.inventory = []
         self.when_sold = []
         self.when_bought = []
+        self.capital = self.inital_capital
+
+        self.positive_trades = 0
+        self.profit_or_loss = []
 
         self.buy_sell_order = []
 
@@ -146,6 +223,10 @@ class IVVEnvironment(gym.Env):
         self.inventory = []
         self.when_sold = []
         self.when_bought = []
+
+        self.positive_trades = 0
+        self.profit_or_loss = []
+        self.capital = self.inital_capital
 
         self.buy_sell_order = []
 
