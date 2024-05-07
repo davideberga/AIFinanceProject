@@ -69,7 +69,7 @@ class AgentLSTMNetwork(AgentNetwork):
         c_0 = Variable(torch.zeros(self.num_layers, self.hidden_size)).to(self.device) #internal state
 
         output, hidden = self.lstm(x, (h_0, c_0))
-        out = self.relu(output.reshape(output.shape[0], -1)) # Take the output of the last input of the sequence
+        out = self.relu(output[-1]) # Take the output of the last input of the sequence
         out = self.fc_1(out)
         out = self.relu(out)
         out = self.fc(out)
