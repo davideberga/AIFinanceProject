@@ -120,12 +120,14 @@ train_environment = IVVEnvironment(train_path, seed=seed, device=device, trading
 
 episode_count = 0
 rewards_list = []
+
 while(train_environment.there_is_another_episode()):
     print("Running episode " + str(episode_count) + "/" + str(train_environment.num_of_ep()))
 
     # Reset the environment and obtain the initial observation
     observation = train_environment.reset()
     info = {}
+    net_profit = []
 
     episode_loss = 0
     start_time = time.time()
@@ -133,6 +135,7 @@ while(train_environment.there_is_another_episode()):
 
         action = agent.act(observation)
         next_observation, reward, done, info = train_environment.step(action)
+        net_profit.append(info["net_profit"])
 
         agent.memory.append((observation, action, reward, next_observation, done))
         rewards_list.append(reward)
@@ -148,4 +151,23 @@ while(train_environment.there_is_another_episode()):
     print(f" >>> Reward: {np.mean(rewards_list):3.5f} Loss: {str(episode_loss)}, \n >>> Profit: {info['total_profit']}, BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, \n >>> Time : {str(time.time() - start_time)}")
     print(info['buy_sell_order'])
 
+    #Calculate Success Rate metric
+    successRate = info["positive_trades"]/len(info["when_sold"])
+    print('Success Rate: ', successRate)
+
+    #Calculate Net Return metric
+    netReturn = sum(net_profit)/len(net_profit)
+    print('Net Return: ', netReturn)
+
+    #Calculate Sharpe Ratio metric
+    rewards_list = np.array(rewards_list)
+    sharpeRatio = (np.mean(rewards_list) / np.std(rewards_list))# - risk_free_rate
+    print('Sharpe Ratio: ', sharpeRatio)
+
+    #Calculate Maximum Drawdown
+    rollingMax = torch.cummax(torch.tensor(net_profit), 0).values
+    max_drawdown = torch.tensor(net_profit) - rollingMax
+    max_drawdown_percentage = (max_drawdown / rollingMax).mean()
+    print('Maximum Drawdown percentage: ', max_drawdown_percentage.item(), '%')
+    
     episode_count += 1

@@ -92,10 +92,10 @@ class IVVEnvironment(gym.Env):
         self.total_profit += profit_loss
             
         #Calculate transactional costs for each trade
-        #transaction_costs = self._calculate_transaction_costs(current_price, 1, 1)
+        transaction_costs = self._calculate_transaction_costs(current_price, 0.001, 0.01)
 
         #Calculate Net Return metric
-        netReturn = self.total_profit #- transaction_costs
+        net_profit = profit_loss - transaction_costs
 
         info = {
             'total_profit' : self.total_profit,
@@ -103,7 +103,7 @@ class IVVEnvironment(gym.Env):
             'when_bought': self.when_bought,
             'buy_sell_order': self.buy_sell_order,
             "positive_trades": self.positive_trades,
-            "net_return": netReturn
+            "net_profit": net_profit
         }
 
         self.episode_minute += 1
@@ -165,24 +165,21 @@ class IVVEnvironment(gym.Env):
 
         return torch.transpose(torch.tensor(res).to(self.device), 0, 1)
     
-    def _calculate_transaction_costs(trade_sizes, commission_rate, spread):
-        # trade_sizes: tensor of trade sizes (batch_size, 1)
+    def _calculate_transaction_costs(self, price, commission_rate, spread):
+        # price: price of the "buy" or "sell"
         # commission_rate: scalar representing the commission rate per trade
         # spread: scalar representing the bid-ask spread --> The difference between the bid and ask prices of a security. 
         #                                                    When traders buy at the ask price and sell at the bid price, 
         #                                                    they incur a cost equal to the spread.
 
         # Calculate commission costs
-        commission_costs = trade_sizes * commission_rate
+        commission_costs = price * commission_rate
 
         # Calculate spread costs
-        spread_costs = trade_sizes * spread
+        spread_costs = price * spread
 
         # Total transactional costs
         total_costs = commission_costs + spread_costs
-        # total_transaction_costs = 0
-        # for c in total_costs:
-        #     total_transaction_costs += c
 
         return total_costs
     
