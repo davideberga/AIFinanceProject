@@ -83,7 +83,7 @@ class IVVEnvironment(gym.Env):
         if action == Actions.BUY.value:
             self.when_bought.append(self.episode_minute)
             self.buy_sell_order.append('BUY')
-        elif (action == Actions.SELL.value or done):
+        elif action == Actions.SELL.value:
             self.when_sold.append(self.episode_minute)
             self.buy_sell_order.append('SELL') 
 
@@ -111,7 +111,7 @@ class IVVEnvironment(gym.Env):
         return observation, reward, done, info
     
     def update_reward(self, price, action):
-        reward = 0
+        reward = -10
         profit_loss = 0
 
         if action == Actions.BUY.value:  # Buy
@@ -143,11 +143,17 @@ class IVVEnvironment(gym.Env):
             profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
         
         profit_loss = profit_loss - 0.01 * price # 1% del prezzo a quell'istante, quando si chiude la posizione
-        risk = abs(profit_loss)
         
-        reward = profit_loss - 0.5 * risk  # penalizziamo il rischio del 50%
+        profit_loss_wt = profit_loss
+        risk = abs(profit_loss_wt)
+
+        profit_loss_wt *= 10000
+        if profit_loss_wt < 0:
+            profit_loss_wt -= 20
         
-        return 100 * reward, profit_loss
+        reward = profit_loss_wt - 0.5 * risk  # penalizziamo il rischio del 50%
+        
+        return reward, profit_loss
     
     def _get_observation(self, current_minute):    
         data = self.dataset[self.day_number].squeeze()
@@ -184,7 +190,7 @@ class IVVEnvironment(gym.Env):
         return total_costs
     
     def there_is_another_episode(self):
-        return self.day_number <= len(self.dataloader) - 1
+        return self.day_number <= len(self.dataloader) - 2
     
     def num_of_ep(self):
         return len(self.dataloader)
