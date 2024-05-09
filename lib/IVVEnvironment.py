@@ -41,7 +41,7 @@ class IVVEnvironment(gym.Env):
         self.window_size = window_size
         self.device = device
 
-        self.dataset = IVVDataset(data_path, ['Volume', 'High'])
+        self.dataset = IVVDataset(data_path, ['High', 'Low', 'Open'])
         self.dataloader = DataLoader(self.dataset, batch_size=1, shuffle=False)
         self.action_space = spaces.Discrete(action_size)
         self.seed(seed)
@@ -72,7 +72,7 @@ class IVVEnvironment(gym.Env):
         assert self.action_space.contains(action), '{} {} invalid'.format(action, type(action))
         
         current_episode = self.dataset[self.day_number].squeeze()
-        current_price = current_episode[self.episode_minute][2]
+        current_price = current_episode[self.episode_minute][1]
         episode_length = current_episode.shape[0]
 
         done = self.episode_minute == episode_length -1
@@ -95,7 +95,7 @@ class IVVEnvironment(gym.Env):
         transaction_costs = self._calculate_transaction_costs(current_price, 0.001, 0.01)
 
         #Calculate Net Return metric
-        net_profit = profit_loss - transaction_costs
+        net_profit = profit_loss - transaction_costs if action != 0 else 0
 
         info = {
             'total_profit' : self.total_profit,
@@ -142,7 +142,7 @@ class IVVEnvironment(gym.Env):
         elif action == 2:  # Sell
             profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
         
-        profit_loss = profit_loss - 0.01 * price # 1% del prezzo a quell'istante, quando si chiude la posizione
+        profit_loss = profit_loss # 1% del prezzo a quell'istante, quando si chiude la posizione
         
         profit_loss_wt = profit_loss
         risk = abs(profit_loss_wt)

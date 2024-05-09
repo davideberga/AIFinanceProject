@@ -49,7 +49,7 @@ from lib.IVVEnvironment import IVVEnvironment
 
 window_size = 10
 batch_size = 16
-feature_size = 3
+feature_size = 2
 seed = 9
 seed_everything(9)
 
@@ -74,6 +74,9 @@ class Agent():
         self.model.to(device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
 
+        self.agent_inventory = []
+
+    def reset_invetory(self):
         self.agent_inventory = []
 
     def act(self, state): 
@@ -104,31 +107,45 @@ class Agent():
         l = len(self.memory)
 
         self.model.train()
+        batch = [[], [], [], [], []]
         for i in range(l - batch_size + 1, l):
             mini_batch.append(self.memory[i])
+            batch[0].append(np.transpose(self.memory[i][0].cpu().numpy()))
+            batch[1].append(torch.tensor(self.memory[i][1]))
+            batch[2].append(torch.tensor(self.memory[i][2]))
+            batch[3].append(self.memory[i][3])
+            batch[4].append(torch.tensor(self.memory[i][4]))
         
         for _ in range(times_shuffle):
             random.shuffle(mini_batch)
-            exp_repl_mean_loss = 0
-            for state, action, reward, next_state, done in mini_batch:
-                
-                self.optimizer.zero_grad()
-                output = self.model(state.float()).reshape(-1)
-                # Target does not need gradients
-                target_f = output.detach().clone()
+            
+            # Compute a mask of non-final states and concatenate the batch elements
+            # (a final state would've been the one after which simulation ended)
+            non_final_mask = torch.tensor(tuple(map(lambda s: s, batch[4])), device=device, dtype=torch.bool)
 
-                if done: 
-                    target_f[action] = reward
-                else:
-                    with torch.no_grad():
-                        target_f[action] = reward + self.gamma * torch.max(self.model(next_state.float()).reshape(-1)).cpu().numpy()   
+            non_final_next_states = torch.cat([s for s in batch[3] if s is not None])
+            
+            state_batch = torch.from_numpy(np.array(batch[0]))
+            action_batch =  torch.transpose(torch.from_numpy(np.array(batch[1])), 0, -1)
+            reward_batch =  torch.from_numpy(np.array(batch[2]))
 
-                loss = nn.MSELoss()
-                output = loss(target_f, output)
-                output.backward()
-                self.optimizer.step()
+            print(state_batch.shape)
+            state_batch = state_batch.to(device)
+            action_batch = action_batch.to(device)
+            reward_batch = reward_batch.to(device)
 
-                exp_repl_mean_loss += output.item()
+            state_action_values =  self.model(state_batch.float()).gather(1, action_batch)
+
+            next_state_values = torch.zeros(batch_size, device=device)
+            with torch.no_grad():
+                next_state_values[non_final_mask] = self.model(non_final_next_states.float()).max(1).values
+            # Compute the expected Q values
+            expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+
+            loss = nn.MSELoss()
+            output = loss(expected_state_action_values, state_action_values)
+            output.backward()
+            self.optimizer.step()
 
         exp_repl_mean_loss /= batch_size * times_shuffle
         
@@ -150,11 +167,7 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-window_size = 10
-batch_size = 16
-feature_size = 3
-seed = 9
-seed_everything(9)
+
 
 def perform_validation(agent: Agent, current_episode, max_episodes=-1):
     validation_environment.close()
@@ -173,7 +186,7 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
             action = agent.act(observation)
             next_observation, reward, done, info = validation_environment.step(action)
 
-            total_profit_loss += info['net_return']
+            total_profit_loss += info['net_profit']
 
             if done: break
 
@@ -188,8 +201,9 @@ train_environment = IVVEnvironment(train_path, seed=seed, device=device, trading
 
 episode_count = 0
 rewards_list = []
+profit_loss_list = []
 
-times_update_dqn = 3
+times_update_dqn = 1
 
 curr_val_thread : threading.Thread = None
 while(train_environment.there_is_another_episode()):
@@ -200,8 +214,11 @@ while(train_environment.there_is_another_episode()):
     info = {}
     net_profit = []
 
+
     episode_loss = 0
     start_time = time.time()
+    agent.reset_invetory()
+
     while True:
 
         action = agent.act(observation)
@@ -221,17 +238,18 @@ while(train_environment.there_is_another_episode()):
     episode_count += 1
 
     if episode_count % 20 == 0:
+        perform_validation(agent, episode_count, 285)
         # freezed_agent = copy.deepcopy(agent)
         # curr_val_thread = threading.Thread(target=perform_validation, args=(freezed_agent, episode_count, 285), daemon=True)
         # curr_val_thread.start()
-        perform_validation(agent, episode_count, 285)
+        
 
     # plot_behavior(day_episode, states_buy, states_sell, total_profit)
     # print(f" >>> Episode: {episode_count} Reward: {np.mean(rewards_list):3.5f} Loss: {str(episode_loss)}, \n >>> Profit: {info['total_profit']}, BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, \n >>> Time : {str(time.time() - start_time)}")
     # print(info['buy_sell_order'])
 
     #Calculate Success Rate metric
-    successRate = info["positive_trades"]/len(info["when_sold"])
+    successRate = info["positive_trades"]/len(info["when_sold"]) if len(info["when_sold"]) != 0  else 0
     print('Success Rate: ', successRate)
 
     #Calculate Net Return metric
@@ -239,8 +257,8 @@ while(train_environment.there_is_another_episode()):
     print('Net Return: ', netReturn)
 
     #Calculate Sharpe Ratio metric
-    rewards_list = np.array(rewards_list)
-    sharpeRatio = (np.mean(rewards_list) / np.std(rewards_list))# - risk_free_rate
+    net_profit = np.array(net_profit)
+    sharpeRatio = (np.mean(net_profit) / np.std(net_profit))# - risk_free_rate
     print('Sharpe Ratio: ', sharpeRatio)
 
     #Calculate Maximum Drawdown
@@ -249,5 +267,4 @@ while(train_environment.there_is_another_episode()):
     max_drawdown_percentage = (max_drawdown / rollingMax).mean()
     print('Maximum Drawdown percentage: ', max_drawdown_percentage.item(), '%')
     
-    episode_count += 1
     print(f" >>> Episode: {episode_count} Reward: {np.mean(rewards_list):3.5f} BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, Time: {time.time()-start_time}")
