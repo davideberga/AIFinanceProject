@@ -48,7 +48,7 @@ def seed_everything(seed: int):
 from lib.IVVEnvironment import IVVEnvironment
 
 window_size = 10
-batch_size = 16
+batch_size = 32
 feature_size = 2
 seed = 9
 seed_everything(9)
@@ -89,7 +89,8 @@ class Agent():
             action_selected = random.randrange(self.action_size) 
         else:
             with torch.no_grad():
-                options = self.model(state.float()).reshape(-1).cpu().numpy()   
+                state = torch.transpose(state, 0, 1).to(device)
+                options = self.model(state.float(), 0).reshape(-1).cpu().numpy()   
                 action_selected = np.argmax(options)
 
         if action_selected != 0 and len(self.agent_inventory) > 0:
@@ -103,47 +104,46 @@ class Agent():
         return action_selected
 
     def expReplay(self, batch_size, times_shuffle=1):
-        mini_batch = []
-        l = len(self.memory)
 
         self.model.train()
-        batch = [[], [], [], [], []]
-        for i in range(l - batch_size + 1, l):
-            mini_batch.append(self.memory[i])
-            batch[0].append(np.transpose(self.memory[i][0].cpu().numpy()))
-            batch[1].append(torch.tensor(self.memory[i][1]))
-            batch[2].append(torch.tensor(self.memory[i][2]))
-            batch[3].append(self.memory[i][3])
-            batch[4].append(torch.tensor(self.memory[i][4]))
-        
+
+        exp_repl_mean_loss = 0
         for _ in range(times_shuffle):
-            random.shuffle(mini_batch)
+
+            batch = [[], [], [], [], []]
+            sample = random.sample(self.memory, batch_size)
+            for observation, action, reward, next_observation, done in sample:
+                batch[0].append(np.transpose(observation.cpu().numpy()))
+                batch[1].append(torch.tensor(action))
+                batch[2].append(torch.tensor(reward))
+                batch[3].append(np.transpose(next_observation.cpu().numpy()))
+                batch[4].append(torch.tensor(done))
             
             # Compute a mask of non-final states and concatenate the batch elements
             # (a final state would've been the one after which simulation ended)
-            non_final_mask = torch.tensor(tuple(map(lambda s: s, batch[4])), device=device, dtype=torch.bool)
+            non_final_mask = torch.tensor(tuple(map(lambda s: not s, batch[4])), device=device, dtype=torch.bool)
+            non_final_next_states = torch.from_numpy(np.array(batch[3])).to(device)[non_final_mask]
 
-            non_final_next_states = torch.cat([s for s in batch[3] if s is not None])
+            # non_final_next_states = torch.cat([s for s in next_states_batch if s is not None])
             
             state_batch = torch.from_numpy(np.array(batch[0]))
-            action_batch =  torch.transpose(torch.from_numpy(np.array(batch[1])), 0, -1)
+            action_batch =  torch.from_numpy(np.array(batch[1])).view(-1, 1)
             reward_batch =  torch.from_numpy(np.array(batch[2]))
 
-            print(state_batch.shape)
             state_batch = state_batch.to(device)
             action_batch = action_batch.to(device)
             reward_batch = reward_batch.to(device)
+            non_final_next_states = non_final_next_states.to(device)
 
-            state_action_values =  self.model(state_batch.float()).gather(1, action_batch)
+            state_action_values =  self.model(state_batch.float(), state_batch.shape[0]).gather(1, action_batch)
 
             next_state_values = torch.zeros(batch_size, device=device)
             with torch.no_grad():
-                next_state_values[non_final_mask] = self.model(non_final_next_states.float()).max(1).values
-            # Compute the expected Q values
+                next_state_values[non_final_mask] = self.model(non_final_next_states.float(), non_final_next_states.shape[0]).max(1).values
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
             loss = nn.MSELoss()
-            output = loss(expected_state_action_values, state_action_values)
+            output = loss(expected_state_action_values.float(), state_action_values.float())
             output.backward()
             self.optimizer.step()
 

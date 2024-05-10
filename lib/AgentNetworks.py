@@ -94,10 +94,11 @@ class AgentGRUNetwork(AgentNetwork):
         self.fc_out = nn.Linear(64, self.action_size)
         self.relu = nn.ReLU()
 
-        self.initial_hidden = torch.zeros(self.num_layers, 15, self.hidden_size, dtype=torch.float32).to(self.device)
+        
     
-    def forward(self,x):
-        x, h = self.gru(x, self.initial_hidden)
-        x = self.relu(self.fc_1(x[-1]))
+    def forward(self,x, batch_size):
+        initial_hidden = torch.zeros(self.num_layers, self.hidden_size, dtype=torch.float32).to(self.device) if batch_size == 0 else torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32).to(self.device)
+        x, h = self.gru(x, initial_hidden)
+        x = self.relu(self.fc_1( x[-1] if batch_size == 0 else x[:, -1, :]))
         x = self.relu(self.fc_2(x))
         return self.fc_out(x)
