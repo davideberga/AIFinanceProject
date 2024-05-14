@@ -56,20 +56,19 @@ class AgentLSTMNetwork(AgentNetwork):
                             hidden_size=self.hidden_size,
                             num_layers=self.num_layers, 
                             batch_first=True, 
-                            device=device,
-                            dropout=0 if self.is_eval else 0.5)
-        self.fc_1 =  nn.Linear(self.hidden_size, 128)
-        self.fc = nn.Linear(128, self.action_size)
+                            device=device)
+        self.fc_1 =  nn.Linear(self.hidden_size, 64)
+        self.fc = nn.Linear(64, self.action_size)
 
         self.relu = nn.ReLU()
     
-    def forward(self,x):
-        x = torch.transpose(x, 0, 1)
-        h_0 = Variable(torch.zeros(self.num_layers, self.hidden_size)).to(self.device) #hidden state
-        c_0 = Variable(torch.zeros(self.num_layers, self.hidden_size)).to(self.device) #internal state
+    def forward(self,x, batch_size):
+        
+        h_0 = torch.zeros(self.num_layers, self.hidden_size, dtype=torch.float32).to(self.device) if batch_size == 0 else torch.zeros(self.num_layers, batch_size,  self.hidden_size, dtype=torch.float32).to(self.device)
+        c_0 = torch.zeros(self.num_layers, self.hidden_size, dtype=torch.float32).to(self.device) if batch_size == 0 else torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32).to(self.device)
 
         output, hidden = self.lstm(x, (h_0, c_0))
-        out = self.relu(output[-1]) # Take the output of the last input of the sequence
+        out = self.relu(output[-1] if batch_size == 0 else output[:, -1, :]) # Take the output of the last input of the sequence
         out = self.fc_1(out)
         out = self.relu(out)
         out = self.fc(out)
@@ -80,16 +79,15 @@ class AgentGRUNetwork(AgentNetwork):
 
     def __init__(self, feature_size, window_size, action_size, device, is_eval=False):
         super(AgentGRUNetwork, self).__init__(feature_size, window_size, action_size, device, is_eval)
-        self.hidden_size = 128
-        self.num_layers = 2
+        self.hidden_size = 512
+        self.num_layers = 1
 
         self.gru = nn.GRU(self.feature_size, 
                           self.hidden_size, 
                           self.num_layers, 
                           batch_first=True,
-                          device=device, 
-                          dropout=0 if self.is_eval else 0.5)
-        self.fc_1 = nn.Linear(128, 128)
+                          device=device)
+        self.fc_1 = nn.Linear(512, 128)
         self.fc_2 = nn.Linear(128, 64)
         self.fc_out = nn.Linear(64, self.action_size)
         self.relu = nn.ReLU()

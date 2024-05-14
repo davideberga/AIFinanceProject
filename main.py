@@ -8,6 +8,7 @@ from pandas import read_csv
 from numpy.random import choice
 import random
 import threading
+from gym.wrappers import FlattenObservation
 
 import numpy as np
 import pandas as pd
@@ -47,9 +48,9 @@ def seed_everything(seed: int):
 # -------- Validation -----------
 from lib.IVVEnvironment import IVVEnvironment
 
-window_size = 10
+window_size = 20
 batch_size = 32
-feature_size = 2
+feature_size = 4
 seed = 9
 seed_everything(9)
 
@@ -70,7 +71,7 @@ class Agent():
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
 
-        self.model = AgentGRUNetwork(self.feature_size, self.window_size, self.action_size, device, is_eval)
+        self.model = AgentLSTMNetwork(self.feature_size, self.window_size, self.action_size, device, is_eval)
         self.model.to(device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
 
@@ -93,13 +94,13 @@ class Agent():
                 options = self.model(state.float(), 0).reshape(-1).cpu().numpy()   
                 action_selected = np.argmax(options)
 
-        if action_selected != 0 and len(self.agent_inventory) > 0:
-            last_action = self.agent_inventory.pop(0)
-            if last_action == action_selected: # if BUY BUY, or SELL SELL, the action is HOLD
-                action_selected = 0
-                self.agent_inventory.append(last_action)
-        elif action_selected != 0:
-            self.agent_inventory.append(action_selected)
+        # if action_selected != 0 and len(self.agent_inventory) > 0:
+        #     last_action = self.agent_inventory.pop(0)
+        #     if last_action == action_selected: # if BUY BUY, or SELL SELL, the action is HOLD
+        #         action_selected = 0
+        #         self.agent_inventory.append(last_action)
+        # elif action_selected != 0:
+        #     self.agent_inventory.append(action_selected)
         
         return action_selected
 
@@ -134,6 +135,7 @@ class Agent():
             action_batch = action_batch.to(device)
             reward_batch = reward_batch.to(device)
             non_final_next_states = non_final_next_states.to(device)
+
 
             state_action_values =  self.model(state_batch.float(), state_batch.shape[0]).gather(1, action_batch)
 
@@ -172,8 +174,10 @@ def seed_everything(seed: int):
 def perform_validation(agent: Agent, current_episode, max_episodes=-1):
     validation_environment.close()
 
+    total_profit_loss_net = 0
     total_profit_loss = 0
     episode_count = 0
+    agent.reset_invetory()
     print(f'Start validation: model from ep {current_episode} on {max_episodes} days')
     while(validation_environment.there_is_another_episode() and (max_episodes == -1 or episode_count < max_episodes)):
 
@@ -186,7 +190,8 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
             action = agent.act(observation)
             next_observation, reward, done, info = validation_environment.step(action)
 
-            total_profit_loss += info['net_profit']
+            total_profit_loss_net += info['net_profit']
+            total_profit_loss += info['profit_loss']
 
             if done: break
 
@@ -194,18 +199,15 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
 
         episode_count+=1
 
-    print(f'Validation finished! Val profit, Model from ep {current_episode} on {episode_count} days: {total_profit_loss}')
+    print(f'Validation finished! Val profit, Model from ep {current_episode} on {episode_count} days: {total_profit_loss_net} Net, {total_profit_loss}')
 
 agent = Agent(feature_size, window_size)
 train_environment = IVVEnvironment(train_path, seed=seed, device=device, trading_cost=1e-3)
 
 episode_count = 0
 rewards_list = []
-profit_loss_list = []
+times_update_dqn = 3
 
-times_update_dqn = 1
-
-curr_val_thread : threading.Thread = None
 while(train_environment.there_is_another_episode()):
     # print("Running episode " + str(episode_count) + "/" + str(train_environment.num_of_ep()))
 
@@ -213,6 +215,7 @@ while(train_environment.there_is_another_episode()):
     observation = train_environment.reset()
     info = {}
     net_profit = []
+    profit_loss_list = []
 
 
     episode_loss = 0
@@ -224,6 +227,7 @@ while(train_environment.there_is_another_episode()):
         action = agent.act(observation)
         next_observation, reward, done, info = train_environment.step(action)
         net_profit.append(info["net_profit"])
+        profit_loss_list.append(info["profit_loss"])
 
         agent.memory.append((observation, action, reward, next_observation, done))
         rewards_list.append(reward)
@@ -237,8 +241,8 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 20 == 0:
-        perform_validation(agent, episode_count, 285)
+    if episode_count % 200 == 0:
+        perform_validation(agent, episode_count, 120)
         # freezed_agent = copy.deepcopy(agent)
         # curr_val_thread = threading.Thread(target=perform_validation, args=(freezed_agent, episode_count, 285), daemon=True)
         # curr_val_thread.start()
@@ -256,6 +260,8 @@ while(train_environment.there_is_another_episode()):
     netReturn = sum(net_profit)/len(net_profit)
     print('Net Return: ', netReturn)
 
+    print('Profit Return: ', sum(profit_loss_list))
+
     #Calculate Sharpe Ratio metric
     net_profit = np.array(net_profit)
     sharpeRatio = (np.mean(net_profit) / np.std(net_profit))# - risk_free_rate
@@ -268,3 +274,5 @@ while(train_environment.there_is_another_episode()):
     print('Maximum Drawdown percentage: ', max_drawdown_percentage.item(), '%')
     
     print(f" >>> Episode: {episode_count} Reward: {np.mean(rewards_list):3.5f} BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, Time: {time.time()-start_time}")
+
+perform_validation(agent, episode_count, 750)
