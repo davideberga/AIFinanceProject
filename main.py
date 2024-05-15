@@ -17,13 +17,12 @@ import matplotlib.pyplot as plt
 from torch import nn
 from collections import deque
 import torch
+from empyrical import max_drawdown, cum_returns_final, sharpe_ratio, cagr, annual_volatility, value_at_risk, conditional_value_at_risk
 
 device = "cpu" if not torch.cuda.is_available() else 'cuda'
 #Disable the warnings
 import warnings
 warnings.filterwarnings('ignore')
-
-import torch
 
 from lib.AgentNetworks import AgentCNNNetwork, AgentLSTMNetwork, AgentGRUNetwork
 import time
@@ -43,7 +42,6 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
-
 
 # -------- Validation -----------
 from lib.IVVEnvironment import IVVEnvironment
@@ -169,13 +167,11 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-
-
 def perform_validation(agent: Agent, current_episode, max_episodes=-1):
     validation_environment.close()
 
-    total_profit_loss_net = 0
-    total_profit_loss = 0
+    total_net_profit = []
+    total_profit_loss = []
     episode_count = 0
     agent.reset_invetory()
     print(f'Start validation: model from ep {current_episode} on {max_episodes} days')
@@ -186,21 +182,56 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
         info = {}
 
         while True:
-
             action = agent.act(observation)
             next_observation, reward, done, info = validation_environment.step(action)
-
-            total_profit_loss_net += info['net_profit']
-            total_profit_loss += info['profit_loss']
+            
+            if info['net_profit'] != 0:
+                total_net_profit.append(info['net_profit'])
+            if info['profit_loss'] != 0:
+                total_profit_loss.append(info['profit_loss'])
 
             if done: break
 
             observation = next_observation
 
         episode_count+=1
+        print(episode_count)
+        #Ogni 285 episodi/giorni calcolo le metriche: quindi calcolo le metriche ogni anno
+        if episode_count % 285 == 0:
 
-    print(f'Validation finished! Val profit, Model from ep {current_episode} on {episode_count} days: {total_profit_loss_net} Net, {total_profit_loss}')
+            net_profit = np.array(total_net_profit)
+            profit_loss = np.array(total_profit_loss)
 
+            print("è passato un anno")
+            #Calculate Sharpe Ratio metric
+            sharpeRatio = sharpe_ratio(profit_loss,risk_free=0)
+            print('Sharpe Ratio: ', sharpeRatio)
+
+            #Calculate Maximum Drawdown metric
+            maxDrawdown = max_drawdown(profit_loss)
+            print('Maximum Drawdown: ', maxDrawdown)
+
+            #Calculate Compounded Annual Return metric
+            annualReturn = cagr(profit_loss, annualization=1)
+            print('Compounded Annual Return: ', annualReturn)
+
+            #Calculate Annual Volatility metric
+            annualVolatility = annual_volatility(profit_loss, annualization=1)
+            print('Annual Volatility: ', annualVolatility)
+
+            #Calculate Value at Risk metric
+            valueAtRisk = value_at_risk(profit_loss)
+            print('Value at Risk: ', valueAtRisk)
+
+            #Calculate Conditional Value at Risk metric
+            condValueAtRisk = conditional_value_at_risk(profit_loss)
+            print('Conditional Value at Risk: ', condValueAtRisk)
+
+    print(f'>>> Validation finished! <<< \n')
+
+# -------- Validation finished -----------
+
+# -------- Train -----------
 agent = Agent(feature_size, window_size)
 train_environment = IVVEnvironment(train_path, seed=seed, device=device, trading_cost=1e-3)
 
@@ -215,7 +246,7 @@ while(train_environment.there_is_another_episode()):
     observation = train_environment.reset()
     info = {}
     net_profit = []
-    profit_loss_list = []
+    profit_loss = []
 
 
     episode_loss = 0
@@ -226,8 +257,11 @@ while(train_environment.there_is_another_episode()):
 
         action = agent.act(observation)
         next_observation, reward, done, info = train_environment.step(action)
-        net_profit.append(info["net_profit"])
-        profit_loss_list.append(info["profit_loss"])
+       
+        if info["net_profit"] != 0:
+            net_profit.append(info["net_profit"])
+        if info["profit_loss"] != 0:
+            profit_loss.append(info["profit_loss"])
 
         agent.memory.append((observation, action, reward, next_observation, done))
         rewards_list.append(reward)
@@ -241,8 +275,8 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 200 == 0:
-        perform_validation(agent, episode_count, 120)
+    if episode_count % 10 == 0:
+        perform_validation(agent, episode_count, 600)
         # freezed_agent = copy.deepcopy(agent)
         # curr_val_thread = threading.Thread(target=perform_validation, args=(freezed_agent, episode_count, 285), daemon=True)
         # curr_val_thread.start()
@@ -252,27 +286,44 @@ while(train_environment.there_is_another_episode()):
     # print(f" >>> Episode: {episode_count} Reward: {np.mean(rewards_list):3.5f} Loss: {str(episode_loss)}, \n >>> Profit: {info['total_profit']}, BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, \n >>> Time : {str(time.time() - start_time)}")
     # print(info['buy_sell_order'])
 
+    net_profit = np.array(net_profit)
+    profit_loss = np.array(profit_loss)
+
+    print(f">>> EPISODE: {episode_count} <<<")
+    print(f"Reward: {np.mean(rewards_list):3.5f}, Profits: {sum(profit_loss)}, BUY: {len(info['when_bought'])}, SELL: {len(info['when_sold'])}") #, Time: {time.time()-start_time}")
+    
+    print("---- Metrics ----")
+
     #Calculate Success Rate metric
-    successRate = info["positive_trades"]/len(info["when_sold"]) if len(info["when_sold"]) != 0  else 0
-    print('Success Rate: ', successRate)
+    if len(info["when_sold"]) > len(info["when_bought"]):
+        successRate = info["positive_trades"]/len(info["when_sold"]) if len(info["when_sold"]) != 0  else 0
+        print('Success Rate: ', successRate)
+    else:
+        successRate = info["positive_trades"]/len(info["when_bought"]) if len(info["when_bought"]) != 0  else 0
+        print('Success Rate: ', successRate)
 
     #Calculate Net Return metric
-    netReturn = sum(net_profit)/len(net_profit)
+    if len(net_profit) == 0:
+        netReturn = 0
+    else:
+        netReturn = sum(net_profit)/len(net_profit)
     print('Net Return: ', netReturn)
 
-    print('Profit Return: ', sum(profit_loss_list))
-
     #Calculate Sharpe Ratio metric
-    net_profit = np.array(net_profit)
-    sharpeRatio = (np.mean(net_profit) / np.std(net_profit))# - risk_free_rate
-    print('Sharpe Ratio: ', sharpeRatio)
+    #sharpeRatio1 = (np.mean(net_profit) / np.std(net_profit))# - risk_free_rate
+    #print('Sharpe Ratio1: ', sharpeRatio1)
 
-    #Calculate Maximum Drawdown
-    rollingMax = torch.cummax(torch.tensor(net_profit), 0).values
-    max_drawdown = torch.tensor(net_profit) - rollingMax
-    max_drawdown_percentage = (max_drawdown / rollingMax).mean()
-    print('Maximum Drawdown percentage: ', max_drawdown_percentage.item(), '%')
+    #sharpeRatio2 = sharpe_ratio(net_profit,risk_free=0)
+    #print('Sharpe Ratio2: ', sharpeRatio2)
+
+    #Calculate Maximum Drawdown metric
+    #maxDrawdown = max_drawdown(profit_loss_list)
+    #print('Maximum Drawdown: ', maxDrawdown)
+
+    #Calculate Cumulative Returns metric:
+    #cumReturns = cum_returns_final(profit_loss_list)
+    #print('Cumulative Returns: ', cumReturns)
     
-    print(f" >>> Episode: {episode_count} Reward: {np.mean(rewards_list):3.5f} BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, Time: {time.time()-start_time}")
+    print("\n")
 
 perform_validation(agent, episode_count, 750)

@@ -128,7 +128,7 @@ class IVVEnvironment(gym.Env):
                 action_done, position_open_price = self.inventory.pop(0)
                 if action_done == Actions.SELL.value: # se posizione aperta di sell, va bene
                     reward, profit_loss = self.reward1(price, position_open_price, action)
-                    self.capital += price
+                    self.capital += price #non devo togliere price, perchè è il price di buy?
                 elif action_done == Actions.BUY.value: # se posizione aperta di buy, non va bene
                     reward = -1000 # perdo totalmente i soldi di quell'azione
         
@@ -141,7 +141,7 @@ class IVVEnvironment(gym.Env):
                 action_done, position_open_price = self.inventory.pop(0)
                 if action_done ==  Actions.BUY.value: # se posizione aperta di buy, va bene
                     reward, profit_loss = self.reward1(price, position_open_price, action)
-                    self.capital -= price
+                    self.capital -= price #non devo aggiungere price, perchè è il price di sell?
                 elif action_done ==  Actions.SELL.value: # se posizione aperta di sell, non va bene
                     reward = -1000 # perdo totalmente i soldi di quell'azione
 
