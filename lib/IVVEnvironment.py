@@ -42,10 +42,11 @@ class IVVEnvironment(gym.Env):
         self.window_size = window_size
         self.device = device
 
-        self.dataset = IVVDataset(data_path, ['High', 'Low', 'Open'])
+        self.dataset = IVVDataset(data_path, ['High', 'Low', 'Open', 'Volume'])
         self.dataloader = DataLoader(self.dataset, batch_size=1, shuffle=False)
         self.action_space = spaces.Discrete(action_size)
         self.seed(seed)
+        self.moving_data = []
 
         self.day_number = 0
         self.episode_minute = 0
@@ -73,7 +74,7 @@ class IVVEnvironment(gym.Env):
         assert self.action_space.contains(action), '{} {} invalid'.format(action, type(action))
         
         current_episode = self.dataset[self.day_number].squeeze()
-        current_price = current_episode[self.episode_minute][1]
+        current_price = current_episode[self.episode_minute]
         episode_length = current_episode.shape[0]
 
         done = self.episode_minute == episode_length -1
@@ -90,16 +91,29 @@ class IVVEnvironment(gym.Env):
             self.buy_sell_order.append('SELL') 
 
         reward, profit_loss = self.update_reward(current_price, action)
+
+        if done: reward += - abs(len(self.when_bought) - len(self.when_sold)) - (len(self.when_bought) + len(self.when_sold))
+
+        # if self.capital < 0:
+        #     print(f" !!! NO MORE MONEY :( {self.episode_minute} : {self.capital}")
+        #     done = True
+        #     reward = -10000
+        #     self.capital = self.inital_capital
+
+
         self.positive_trades += int(profit_loss > 0)
         self.total_profit += profit_loss
 
-        #if done and len(self.buy_sell_order) == 0 : reward = -10000
-            
         #Calculate transactional costs for each trade
-        transaction_costs = self._calculate_transaction_costs(current_price, 0.001, 0.01)
+        transaction_costs = 0
+        last_action = 0 if len(self.inventory) == 0 else self.inventory[0][1]
+        if (action != 0 and action != last_action):
+            transaction_costs = self._calculate_transaction_costs(current_price, 0.001, 0.01)
+
+        if done: reward = self.total_profit
 
         #Calculate Net Return metric
-        net_profit = profit_loss - transaction_costs if action != 0 else 0
+        net_profit = profit_loss - transaction_costs
 
         info = {
             'total_profit' : self.total_profit,
@@ -110,13 +124,11 @@ class IVVEnvironment(gym.Env):
             "net_profit": net_profit,
             "profit_loss": profit_loss
         }
-
         self.episode_minute += 1
-
         return observation, reward, done, info
     
     def update_reward(self, price, action):
-        reward = -10
+        reward = -1
         profit_loss = 0
 
         if action == Actions.BUY.value:  # Buy
@@ -128,9 +140,9 @@ class IVVEnvironment(gym.Env):
                 action_done, position_open_price = self.inventory.pop(0)
                 if action_done == Actions.SELL.value: # se posizione aperta di sell, va bene
                     reward, profit_loss = self.reward1(price, position_open_price, action)
-                    self.capital += price #non devo togliere price, perchè è il price di buy?
+                    self.capital -= price
                 elif action_done == Actions.BUY.value: # se posizione aperta di buy, non va bene
-                    reward = -1000 # perdo totalmente i soldi di quell'azione
+                    reward = -10 # perdo totalmente i soldi di quell'azione
         
         elif action == Actions.SELL.value:  # Sell
             if len(self.inventory) == 0:  # non ho posizioni aperte
@@ -141,30 +153,30 @@ class IVVEnvironment(gym.Env):
                 action_done, position_open_price = self.inventory.pop(0)
                 if action_done ==  Actions.BUY.value: # se posizione aperta di buy, va bene
                     reward, profit_loss = self.reward1(price, position_open_price, action)
-                    self.capital -= price #non devo aggiungere price, perchè è il price di sell?
-                elif action_done ==  Actions.SELL.value: # se posizione aperta di sell, non va bene
-                    reward = -1000 # perdo totalmente i soldi di quell'azione
+                    self.capital += price
+                elif action_done == Actions.SELL.value: # se posizione aperta di sell, non va bene
+                    reward = -10 # perdo totalmente i soldi di quell'azione
 
         return reward, profit_loss
 
-    def compute_reward(self, price, open_price, action):
-        if action == 1:  # Buy
-            profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
-        elif action == 2:  # Sell
-            profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
+    # def compute_reward(self, price, open_price, action):
+    #     if action == 1:  # Buy
+    #         profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
+    #     elif action == 2:  # Sell
+    #         profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
         
-        profit_loss = profit_loss # 1% del prezzo a quell'istante, quando si chiude la posizione
+    #     profit_loss = profit_loss # 1% del prezzo a quell'istante, quando si chiude la posizione
         
-        profit_loss_wt = profit_loss
-        risk = abs(profit_loss_wt)
+    #     profit_loss_wt = profit_loss
+    #     risk = abs(profit_loss_wt)
 
-        profit_loss_wt *= 10000
-        if profit_loss_wt < 0:
-            profit_loss_wt -= 20
+    #     profit_loss_wt *= 10000
+    #     if profit_loss_wt < 0:
+    #         profit_loss_wt -= 20
         
-        reward = profit_loss_wt - 0.5 * risk  # penalizziamo il rischio del 50%
+    #     reward = profit_loss_wt - 0.5 * risk  # penalizziamo il rischio del 50%
         
-        return reward, profit_loss
+    #     return reward, profit_loss
     
     def reward1(self, price, open_price, action):
         if action == 1:  # Buy
@@ -172,33 +184,48 @@ class IVVEnvironment(gym.Env):
         elif action == 2:  # Sell
             profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
 
-        profit_loss_wt = 1000 * profit_loss
+        profit_loss_wt = 10000 * profit_loss
 
-        if(profit_loss > 0 ): profit_loss_wt += 100
-        if(profit_loss < 0 ): profit_loss_wt -= 100
+        if(profit_loss > 0 ): profit_loss_wt += 20
+        if(profit_loss < 0 ): profit_loss_wt -= 20
 
         return profit_loss_wt, profit_loss
 
 
     
     def _get_observation(self, current_minute):    
-        data = self.dataset[self.day_number].squeeze()
-        data = torch.from_numpy(data).to(self.device)
-        from_minute = current_minute - self.window_size + 1
-        capital = torch.tensor(self.capital).to(self.device)
+        data = self.dataset[self.day_number]
+
+        last_open_action = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
+        last_open_price =  0 if len(self.inventory) == 0 else self.inventory[0][1]
+        if current_minute == 0:
+            for _ in range(self.window_size):
+                self.moving_data.append([0,0,0,0])
+        self.moving_data.append([data[current_minute][0], 
+                          data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
+                          last_open_action,
+                          last_open_price])
+        
+        return torch.transpose(torch.tensor(self.moving_data[-self.window_size:]).to(self.device), 0, 1)
 
         if from_minute>=0:
             block = data[from_minute:current_minute + 1, :]
         else:
-            block = torch.cat([ data[0].repeat(-from_minute, 1), data[0:current_minute + 1, :]])
+            if self.day_number > 0:
+                yesterday_data = self.dataset[self.day_number-1]
+                yesterday_data = torch.from_numpy(yesterday_data).to(self.device)
+                block = torch.cat([ yesterday_data[from_minute:], data[0:current_minute + 1 ]])
+            else:
+                block = torch.cat([ data[0].repeat(-from_minute, 1), data[0:current_minute + 1]])
 
         res = []
-        for i in range(self.window_size - 1):
+        for i in range(self.window_size):
             # Add capital
             #with_capital = np.append(block[i + 1].cpu().numpy() - block[i].cpu().numpy(), self.capital)
             buy_sell_status = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
             with_status = np.append(block[i + 1].cpu().numpy() - block[i].cpu().numpy(), buy_sell_status)
             with_last_action_price = np.append(with_status, 0 if len(self.inventory) == 0 else self.inventory[0][1])
+            # with_capital = np.append(with_last_action_price, self.capital)
             res.append(with_last_action_price)
 
         return torch.transpose(torch.tensor(res).to(self.device), 0, 1)

@@ -18,7 +18,7 @@ class IVVDataset(Dataset):
             if(len(day) > 0):
                 day_preprocessed = self._preprocess_day(day, colums_to_drop)
                 self.days.append(day_preprocessed)
-        random.shuffle(self.days)
+        # random.shuffle(self.days)
 
     def _preprocess_day(self, day: pd.DataFrame, colums_to_drop: List[str]) -> pd.DataFrame:
         return day.drop(columns=colums_to_drop)

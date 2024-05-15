@@ -46,8 +46,8 @@ def seed_everything(seed: int):
 # -------- Validation -----------
 from lib.IVVEnvironment import IVVEnvironment
 
-window_size = 20
-batch_size = 32
+window_size = 64
+batch_size = 64
 feature_size = 4
 seed = 9
 seed_everything(9)
@@ -78,12 +78,17 @@ class Agent():
     def reset_invetory(self):
         self.agent_inventory = []
 
+    def evaluation_mode(self, eval=True):
+        self.is_eval= eval
+
     def act(self, state): 
         #If it is test and self.epsilon is still very high, once the epsilon become low, there are no random
         #actions suggested.
 
         action_selected = 0
         self.model.eval()
+        action_by_model = 0
+        # Epsilon-greedy policy only on training
         if not self.is_eval and random.random() <= self.epsilon:
             action_selected = random.randrange(self.action_size) 
         else:
@@ -91,16 +96,19 @@ class Agent():
                 state = torch.transpose(state, 0, 1).to(device)
                 options = self.model(state.float(), 0).reshape(-1).cpu().numpy()   
                 action_selected = np.argmax(options)
+                action_by_model = 1 if action_selected != 0 else 0
 
-        # if action_selected != 0 and len(self.agent_inventory) > 0:
-        #     last_action = self.agent_inventory.pop(0)
-        #     if last_action == action_selected: # if BUY BUY, or SELL SELL, the action is HOLD
-        #         action_selected = 0
-        #         self.agent_inventory.append(last_action)
-        # elif action_selected != 0:
-        #     self.agent_inventory.append(action_selected)
+        # Force correct action only in evaluation mode
+        if self.is_eval:
+            if action_selected != 0 and len(self.agent_inventory) > 0:
+                last_action = self.agent_inventory.pop(0)
+                if last_action == action_selected: # if BUY BUY, or SELL SELL, the action is HOLD
+                    action_selected = 0
+                    self.agent_inventory.append(last_action)
+            elif action_selected != 0:
+                self.agent_inventory.append(action_selected)
         
-        return action_selected
+        return action_selected, action_by_model
 
     def expReplay(self, batch_size, times_shuffle=1):
 
@@ -173,16 +181,20 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
     total_net_profit = []
     total_profit_loss = []
     episode_count = 0
-    agent.reset_invetory()
+    actions_by_model = 0
+    
     print(f'Start validation: model from ep {current_episode} on {max_episodes} days')
     while(validation_environment.there_is_another_episode() and (max_episodes == -1 or episode_count < max_episodes)):
 
         # Reset the environment and obtain the initial observation
         observation = validation_environment.reset()
+        agent.reset_invetory()
         info = {}
 
         while True:
-            action = agent.act(observation)
+
+            action, action_by_model = agent.act(observation)
+            actions_by_model += action_by_model
             next_observation, reward, done, info = validation_environment.step(action)
             
             if info['net_profit'] != 0:
@@ -227,13 +239,14 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
             condValueAtRisk = conditional_value_at_risk(profit_loss)
             print('Conditional Value at Risk: ', condValueAtRisk)
 
+    print(f'Actions by model {str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
 
 # -------- Validation finished -----------
 
 # -------- Train -----------
 agent = Agent(feature_size, window_size)
-train_environment = IVVEnvironment(train_path, seed=seed, device=device, trading_cost=1e-3)
+train_environment = IVVEnvironment(train_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 
 episode_count = 0
 rewards_list = []
@@ -252,10 +265,12 @@ while(train_environment.there_is_another_episode()):
     episode_loss = 0
     start_time = time.time()
     agent.reset_invetory()
+    actions_by_model = 0
 
     while True:
 
-        action = agent.act(observation)
+        action, action_by_model = agent.act(observation)
+        actions_by_model += action_by_model
         next_observation, reward, done, info = train_environment.step(action)
        
         if info["net_profit"] != 0:
@@ -275,8 +290,10 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 10 == 0:
-        perform_validation(agent, episode_count, 600)
+    if episode_count % 20 == 0:
+        agent.evaluation_mode()
+        perform_validation(agent, episode_count, 120)
+        agent.evaluation_mode(False)
         # freezed_agent = copy.deepcopy(agent)
         # curr_val_thread = threading.Thread(target=perform_validation, args=(freezed_agent, episode_count, 285), daemon=True)
         # curr_val_thread.start()
@@ -295,12 +312,14 @@ while(train_environment.there_is_another_episode()):
     print("---- Metrics ----")
 
     #Calculate Success Rate metric
+    print(f'Actions by model {str(actions_by_model)}')
     if len(info["when_sold"]) > len(info["when_bought"]):
         successRate = info["positive_trades"]/len(info["when_sold"]) if len(info["when_sold"]) != 0  else 0
         print('Success Rate: ', successRate)
     else:
         successRate = info["positive_trades"]/len(info["when_bought"]) if len(info["when_bought"]) != 0  else 0
         print('Success Rate: ', successRate)
+    
 
     #Calculate Net Return metric
     if len(net_profit) == 0:
