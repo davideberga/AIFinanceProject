@@ -10,6 +10,11 @@ class IVVDataset(Dataset):
         self.dataset.isnull().values.any()
         self.dataset=self.dataset.fillna(method='ffill')
 
+        mean_close = self.dataset['Close'].mean()
+        std_close = self.dataset['Close'].std()
+        #self.dataset['Close'] = (self.dataset['Close'] - mean_close) / std_close
+
+
         # Group data by day
         self.grouped_by_day = self.dataset.groupby(pd.Grouper(freq='D'))
 

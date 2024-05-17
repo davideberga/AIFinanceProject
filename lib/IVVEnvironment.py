@@ -48,15 +48,16 @@ class IVVEnvironment(gym.Env):
         self.seed(seed)
         self.moving_data = []
 
-        self.day_number = 0
+        self.day_number = -1
         self.episode_minute = 0
 
-        self.total_profit = 200
+        self.total_profit = 0
         self.inventory = []
         self.when_sold = []
         self.when_bought = []
         self.positive_trades = 0
         self.profit_or_loss = []
+        self.actual_trades = 0
 
         self.inital_capital = 10000
         self.capital = self.inital_capital
@@ -77,9 +78,9 @@ class IVVEnvironment(gym.Env):
         current_price = current_episode[self.episode_minute]
         episode_length = current_episode.shape[0]
 
-        done = self.episode_minute == episode_length -1
+        done = self.episode_minute == episode_length - 1
         observation = self._get_observation(self.episode_minute)
-        if done and len(self.inventory) > 0: action = 1 if self.inventory[0][0] == 2 else 2
+        # if done and len(self.inventory) > 0: action = 1 if self.inventory[0][0] == 2 else 2
         
         
         reward = 0
@@ -90,30 +91,14 @@ class IVVEnvironment(gym.Env):
             self.when_sold.append(self.episode_minute)
             self.buy_sell_order.append('SELL') 
 
-        reward, profit_loss = self.update_reward(current_price, action)
-
-        if done: reward += - abs(len(self.when_bought) - len(self.when_sold)) - (len(self.when_bought) + len(self.when_sold))
-
-        # if self.capital < 0:
-        #     print(f" !!! NO MORE MONEY :( {self.episode_minute} : {self.capital}")
-        #     done = True
-        #     reward = -10000
-        #     self.capital = self.inital_capital
-
+        reward, profit_loss, net_profit = self.update_reward(current_price, action)
 
         self.positive_trades += int(profit_loss > 0)
         self.total_profit += profit_loss
 
-        #Calculate transactional costs for each trade
-        transaction_costs = 0
-        last_action = 0 if len(self.inventory) == 0 else self.inventory[0][1]
-        if (action != 0 and action != last_action):
-            transaction_costs = self._calculate_transaction_costs(current_price, 0.001, 0.01)
+        if done and self.actual_trades > 8 or self.actual_trades < 2: reward += -100 if self.actual_trades < 2 else self.actual_trades * -9
+        if done and self.actual_trades <= 8 and self.actual_trades >= 2 and self.actual_trades % 2 == 0: reward += 50
 
-        if done: reward = self.total_profit
-
-        #Calculate Net Return metric
-        net_profit = profit_loss - transaction_costs
 
         info = {
             'total_profit' : self.total_profit,
@@ -122,91 +107,143 @@ class IVVEnvironment(gym.Env):
             'buy_sell_order': self.buy_sell_order,
             "positive_trades": self.positive_trades,
             "net_profit": net_profit,
-            "profit_loss": profit_loss
+            "profit_loss": profit_loss,
+            "actual_trades": self.actual_trades
         }
         self.episode_minute += 1
         return observation, reward, done, info
     
-    def update_reward(self, price, action):
-        reward = -1
-        profit_loss = 0
+    # def update_reward(self, price, action):
+    #     data = self.dataset[self.day_number]
+    #     reward = -10
+        
+    #     if len(self.inventory) == 0: reward = 0
+    #     elif action == Actions.HOLD.value:
+    #         action_done, open_price = self.inventory[0]
+    #         if action_done == Actions.SELL.value:
+    #             
+    #             reward = 10*(open_price - price)
+    #         elif action_done == Actions.BUY.value:
+    #             
+    #             reward = 10*(price - open_price)
+        
 
-        if action == Actions.BUY.value:  # Buy
-            if len(self.inventory) == 0:  # non ho posizioni aperte 
-                self.inventory.append((Actions.BUY.value, price)) # aggiungo una posizione, con 1 l'azione buy e price il prezzo a cui ho comprato
-                self.capital -= price
-                reward = 0
-            else: # ho già una posizione aperta, controllo qual è questa posizione
-                action_done, position_open_price = self.inventory.pop(0)
-                if action_done == Actions.SELL.value: # se posizione aperta di sell, va bene
-                    reward, profit_loss = self.reward1(price, position_open_price, action)
-                    self.capital -= price
-                elif action_done == Actions.BUY.value: # se posizione aperta di buy, non va bene
-                    reward = -10 # perdo totalmente i soldi di quell'azione
-        
-        elif action == Actions.SELL.value:  # Sell
-            if len(self.inventory) == 0:  # non ho posizioni aperte
-                self.inventory.append(( Actions.SELL.value, price))
-                self.capital += price
-                reward = 0
-            else: # ho già una posizione aperta
-                action_done, position_open_price = self.inventory.pop(0)
-                if action_done ==  Actions.BUY.value: # se posizione aperta di buy, va bene
-                    reward, profit_loss = self.reward1(price, position_open_price, action)
-                    self.capital += price
-                elif action_done == Actions.SELL.value: # se posizione aperta di sell, non va bene
-                    reward = -10 # perdo totalmente i soldi di quell'azione
 
-        return reward, profit_loss
+    #     difference = data[self.episode_minute][0]-data[self.episode_minute - self.window_size if self.episode_minute > 0 else 0][0]
+    #     if action == Actions.BUY.value:
+    #         reward = 5 if difference > 0 else -5
+    #     if action == Actions.SELL.value:
+    #         reward = 5 if difference < 0 else -5
 
-    # def compute_reward(self, price, open_price, action):
-    #     if action == 1:  # Buy
-    #         profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
-    #     elif action == 2:  # Sell
-    #         profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
-        
-    #     profit_loss = profit_loss # 1% del prezzo a quell'istante, quando si chiude la posizione
-        
-    #     profit_loss_wt = profit_loss
-    #     risk = abs(profit_loss_wt)
+    #     reward += - abs(len(self.when_bought) - len(self.when_sold))
+    #     if len(self.when_bought) + len(self.when_sold) > 10: reward += len(self.when_bought) + len(self.when_sold)
+    #     elif len(self.when_bought) + len(self.when_sold) < 2: reward -= 100
 
-    #     profit_loss_wt *= 10000
-    #     if profit_loss_wt < 0:
-    #         profit_loss_wt -= 20
-        
-    #     reward = profit_loss_wt - 0.5 * risk  # penalizziamo il rischio del 50%
-        
+    #     profit_loss = 0
+    #     if len(self.inventory) == 0:
+    #         if action == Actions.BUY.value: self.inventory.append((Actions.BUY.value, price))
+    #         elif action == Actions.SELL.value: self.inventory.append((Actions.SELL.value, price))
+    #     else:
+    #         previous_action, _ = self.inventory[0]
+    #         if action != Actions.HOLD.value and action != previous_action:
+    #             previous_action, open_position_price = self.inventory.pop(0)
+    #             reward, profit_loss = self.reward1(price, open_position_price, action)    
+
     #     return reward, profit_loss
     
-    def reward1(self, price, open_price, action):
-        if action == 1:  # Buy
-            profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
-        elif action == 2:  # Sell
-            profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
+    # def reward1(self, price, open_price, action):
+    #     if action == Actions.BUY.value:  # Buy
+    #         profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
+    #     elif action == Actions.SELL.value:  # Sell
+    #         profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
 
-        profit_loss_wt = 10000 * profit_loss
+    #     reward = 100 if(profit_loss > 0 ) else -100
 
-        if(profit_loss > 0 ): profit_loss_wt += 20
-        if(profit_loss < 0 ): profit_loss_wt -= 20
+    #     return 1000*profit_loss, profit_loss
 
-        return profit_loss_wt, profit_loss
+    def update_reward(self, price, action):
+        scaler = 100
+        reward = 0
+        profit_loss = 0
+        net_profit = 0
+
+        if len(self.inventory) == 0:
+            if action == Actions.BUY.value:
+                self.inventory.append((Actions.BUY.value, price))
+                self.actual_trades += 1
+            elif action == Actions.SELL.value:
+                self.inventory.append((Actions.SELL.value, price))
+                self.actual_trades += 1
+        else:
+            previous_action, open_position_price = self.inventory[0]
+            if action == Actions.HOLD.value:
+                if previous_action == Actions.BUY.value:
+                    # If price increase after BUY action, HOLD is a smart thing to do
+                    reward = scaler * (price - open_position_price)
+                elif previous_action == Actions.SELL.value:
+                    # If price decrese after SELL action, so HOLD is a smart thing to do
+                    reward = scaler * (open_position_price - price)
+            else:
+                if action != previous_action:
+                    self.inventory.pop(0)
+                    self.actual_trades += 1
+                    if action == Actions.SELL.value:
+                        profit_loss = price - open_position_price
+                    elif action == Actions.BUY.value:
+                        profit_loss = open_position_price - price
+
+                    transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01)
+                    net_profit = profit_loss - transaction_costs
+                    reward = scaler * net_profit
+                    self.total_profit += net_profit
+                    self.profit_or_loss.append(net_profit)
+
+                    # if action == Actions.BUY.value:
+                    #     self.inventory.append((Actions.BUY.value, price))
+                    # elif action == Actions.SELL.value:
+                    #     self.inventory.append((Actions.SELL.value, price))
+        return reward, profit_loss, net_profit
 
 
     
     def _get_observation(self, current_minute):    
         data = self.dataset[self.day_number]
 
+        feature_size = 5
+
         last_open_action = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
         last_open_price =  0 if len(self.inventory) == 0 else self.inventory[0][1]
-        if current_minute == 0:
-            for _ in range(self.window_size):
-                self.moving_data.append([0,0,0,0])
+        if self.day_number == 0 and self.window_size - current_minute > 0:
+            for _ in range(abs(self.window_size - current_minute)):
+                self.moving_data.append([0 for _ in range(feature_size)])
+
+        is_increasing = data[current_minute][0]-data[current_minute - self.window_size if current_minute > 0 else 0][0]
+        is_increasing = is_increasing > 0
+
         self.moving_data.append([data[current_minute][0], 
                           data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
                           last_open_action,
-                          last_open_price])
+                          # last_open_price, # ???? 
+                          is_increasing, # Trend
+                          # risk
+                          self.actual_trades
+                          ])
         
-        return torch.transpose(torch.tensor(self.moving_data[-self.window_size:]).to(self.device), 0, 1)
+        current_window = torch.transpose(torch.tensor(self.moving_data[-self.window_size:]).to(self.device), 0, 1)
+
+        # mask = torch.tensor([[j==0 for _ in range(self.window_size)] for j in range(feature_size)]).to(self.device)
+        # masked_window_mean = current_window[mask].clone().to(self.device)
+        # masked_window_std = current_window[mask].clone().to(self.device)
+
+        # mean = masked_window_mean.mean()
+        # masked_window_mean -= mean
+        # std = masked_window_std.std()
+        # masked_window_mean /= std
+        # current_window[mask] = masked_window_mean
+
+        # print(current_window)
+
+        return current_window
 
         if from_minute>=0:
             block = data[from_minute:current_minute + 1, :]
@@ -259,27 +296,27 @@ class IVVEnvironment(gym.Env):
     '''
     def reset(self):
         self.day_number += 1
-        self.episode_minute = 0
+        self.episode_minute = 1
+        self.actual_trades = 0
 
         self.total_profit = 0
         self.inventory = []
         self.when_sold = []
         self.when_bought = []
-        self.capital = self.inital_capital
-
         self.positive_trades = 0
         self.profit_or_loss = []
 
         self.buy_sell_order = []
 
-        return self._get_observation(self.episode_minute)
+        return self._get_observation(0)
     
     '''
         Force the environment to start from day 0
     '''
     def close(self):
-        self.day_number = 0
+        self.day_number = -1
         self.episode_minute = 0
+        self.moving_data = []
 
         self.total_profit = 0
         self.inventory = []

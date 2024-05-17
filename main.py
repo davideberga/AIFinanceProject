@@ -47,12 +47,12 @@ def seed_everything(seed: int):
 from lib.IVVEnvironment import IVVEnvironment
 
 window_size = 64
-batch_size = 64
-feature_size = 4
+batch_size = 32
+feature_size = 5
 seed = 9
 seed_everything(9)
 
-validation_environment = IVVEnvironment(validation_path, seed=seed, device=device, trading_cost=1e-3)
+validation_environment = IVVEnvironment(validation_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 
 class Agent():
     def __init__(self, feature_size, window_size, is_eval=False, model_name=""):
@@ -111,7 +111,7 @@ class Agent():
         return action_selected, action_by_model
 
     def expReplay(self, batch_size, times_shuffle=1):
-
+        loss = nn.MSELoss()
         self.model.train()
 
         exp_repl_mean_loss = 0
@@ -150,8 +150,9 @@ class Agent():
                 next_state_values[non_final_mask] = self.model(non_final_next_states.float(), non_final_next_states.shape[0]).max(1).values
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
-            loss = nn.MSELoss()
             output = loss(expected_state_action_values.float(), state_action_values.float())
+            
+            self.optimizer.zero_grad()
             output.backward()
             self.optimizer.step()
 
@@ -207,17 +208,27 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
             observation = next_observation
 
         episode_count+=1
-        print(episode_count)
         #Ogni 285 episodi/giorni calcolo le metriche: quindi calcolo le metriche ogni anno
-        if episode_count % 285 == 0:
+        if episode_count % 250 == 0:
 
             net_profit = np.array(total_net_profit)
             profit_loss = np.array(total_profit_loss)
 
-            print("è passato un anno")
+            print("Happy new year")
+            print(f"Net profit: {np.sum(net_profit)}")
+            print(f"Profit: {np.sum(profit_loss)}")
             #Calculate Sharpe Ratio metric
-            sharpeRatio = sharpe_ratio(profit_loss,risk_free=0)
-            print('Sharpe Ratio: ', sharpeRatio)
+            if(len(profit_loss) > 0):
+                sharpeRatio = sharpe_ratio(profit_loss,risk_free=0)
+                print('Sharpe Ratio: ', sharpeRatio)
+
+                #Calculate Value at Risk metric
+                valueAtRisk = value_at_risk(profit_loss)
+                print('Value at Risk: ', valueAtRisk)
+
+                #Calculate Conditional Value at Risk metric
+                condValueAtRisk = conditional_value_at_risk(profit_loss)
+                print('Conditional Value at Risk: ', condValueAtRisk)
 
             #Calculate Maximum Drawdown metric
             maxDrawdown = max_drawdown(profit_loss)
@@ -230,14 +241,6 @@ def perform_validation(agent: Agent, current_episode, max_episodes=-1):
             #Calculate Annual Volatility metric
             annualVolatility = annual_volatility(profit_loss, annualization=1)
             print('Annual Volatility: ', annualVolatility)
-
-            #Calculate Value at Risk metric
-            valueAtRisk = value_at_risk(profit_loss)
-            print('Value at Risk: ', valueAtRisk)
-
-            #Calculate Conditional Value at Risk metric
-            condValueAtRisk = conditional_value_at_risk(profit_loss)
-            print('Conditional Value at Risk: ', condValueAtRisk)
 
     print(f'Actions by model {str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
@@ -257,6 +260,7 @@ while(train_environment.there_is_another_episode()):
 
     # Reset the environment and obtain the initial observation
     observation = train_environment.reset()
+    
     info = {}
     net_profit = []
     profit_loss = []
@@ -290,18 +294,10 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 20 == 0:
+    if episode_count % 50 == 0:
         agent.evaluation_mode()
-        perform_validation(agent, episode_count, 120)
+        perform_validation(agent, episode_count, 320)
         agent.evaluation_mode(False)
-        # freezed_agent = copy.deepcopy(agent)
-        # curr_val_thread = threading.Thread(target=perform_validation, args=(freezed_agent, episode_count, 285), daemon=True)
-        # curr_val_thread.start()
-        
-
-    # plot_behavior(day_episode, states_buy, states_sell, total_profit)
-    # print(f" >>> Episode: {episode_count} Reward: {np.mean(rewards_list):3.5f} Loss: {str(episode_loss)}, \n >>> Profit: {info['total_profit']}, BUY trades: {len(info['when_bought'])}, SELL trades: {len(info['when_sold'])}, \n >>> Time : {str(time.time() - start_time)}")
-    # print(info['buy_sell_order'])
 
     net_profit = np.array(net_profit)
     profit_loss = np.array(profit_loss)
@@ -313,6 +309,7 @@ while(train_environment.there_is_another_episode()):
 
     #Calculate Success Rate metric
     print(f'Actions by model {str(actions_by_model)}')
+    print(f"Actual trades : { info['actual_trades']}")
     if len(info["when_sold"]) > len(info["when_bought"]):
         successRate = info["positive_trades"]/len(info["when_sold"]) if len(info["when_sold"]) != 0  else 0
         print('Success Rate: ', successRate)
