@@ -1,18 +1,30 @@
-# AI&FinanceProject - AI Trading Strategy
+# Q-Trader
 
-Bergamasco Davide, Filippi Virginia, Toffoli Martina
+** Use in your own risk **
 
-This is the source code of our project, a Reinforcement Learning algorithm that learns to trade. 
+Pytorch implmentation from q-trader(https://github.com/edwardhdlu/q-trader)
 
-## :construction_worker: Dependencies
+## Results
 
-- `Python >= 3.8`
-- `Pytorch 2.3.0+cu118`
+Some examples of results on test sets:
 
-## :snake: Conda env
+![HSI2018](images/%5EHSI_2018.png)  
+Starting Capital: $100,000.  
+HSI, 2017-2018. Profit of $10702.13.
 
-To get started, we provide the exported conda env we used during development:
+## Running the Code
 
-```bash
-conda env create -f environment.yml
+To train the model, download a training and test csv files from [Yahoo! Finance](https://ca.finance.yahoo.com/quote/%5EGSPC/history?p=%5EGSPC) into `data/`
 ```
+mkdir models
+python train ^GSPC 10 1000
+```
+
+Then when training finishes (minimum 200 episodes for results):
+```
+jupyter notebook -> visualize.ipynb
+```
+
+## References
+
+[Deep Q-Learning with Keras and Gym](https://keon.io/deep-q-learning/) - Q-learning overview and Agent skeleton code
