@@ -43,9 +43,8 @@ class IVVEnvironment(gym.Env):
         self.device = device
 
         self.dataset = IVVDataset(data_path, ['High', 'Low', 'Open', 'Volume'])
-        self.dataloader = DataLoader(self.dataset, batch_size=1, shuffle=False)
         self.action_space = spaces.Discrete(action_size)
-        self.seed(seed)
+        #self.seed(seed)
         self.moving_data = []
 
         self.day_number = -1
@@ -75,7 +74,7 @@ class IVVEnvironment(gym.Env):
         assert self.action_space.contains(action), '{} {} invalid'.format(action, type(action))
         
         current_episode = self.dataset[self.day_number].squeeze()
-        current_price = current_episode[self.episode_minute]
+        current_price = current_episode[self.episode_minute][0]
         episode_length = current_episode.shape[0]
 
         done = self.episode_minute == episode_length - 1
@@ -96,8 +95,8 @@ class IVVEnvironment(gym.Env):
         self.positive_trades += int(profit_loss > 0)
         self.total_profit += profit_loss
 
-        if done and self.actual_trades > 8 or self.actual_trades < 2: reward += -100 if self.actual_trades < 2 else self.actual_trades * -9
-        if done and self.actual_trades <= 8 and self.actual_trades >= 2 and self.actual_trades % 2 == 0: reward += 50
+        
+        # if total_trades % 2 == 0: reward += 5
 
 
         info = {
@@ -112,54 +111,7 @@ class IVVEnvironment(gym.Env):
         }
         self.episode_minute += 1
         return observation, reward, done, info
-    
-    # def update_reward(self, price, action):
-    #     data = self.dataset[self.day_number]
-    #     reward = -10
-        
-    #     if len(self.inventory) == 0: reward = 0
-    #     elif action == Actions.HOLD.value:
-    #         action_done, open_price = self.inventory[0]
-    #         if action_done == Actions.SELL.value:
-    #             
-    #             reward = 10*(open_price - price)
-    #         elif action_done == Actions.BUY.value:
-    #             
-    #             reward = 10*(price - open_price)
-        
 
-
-    #     difference = data[self.episode_minute][0]-data[self.episode_minute - self.window_size if self.episode_minute > 0 else 0][0]
-    #     if action == Actions.BUY.value:
-    #         reward = 5 if difference > 0 else -5
-    #     if action == Actions.SELL.value:
-    #         reward = 5 if difference < 0 else -5
-
-    #     reward += - abs(len(self.when_bought) - len(self.when_sold))
-    #     if len(self.when_bought) + len(self.when_sold) > 10: reward += len(self.when_bought) + len(self.when_sold)
-    #     elif len(self.when_bought) + len(self.when_sold) < 2: reward -= 100
-
-    #     profit_loss = 0
-    #     if len(self.inventory) == 0:
-    #         if action == Actions.BUY.value: self.inventory.append((Actions.BUY.value, price))
-    #         elif action == Actions.SELL.value: self.inventory.append((Actions.SELL.value, price))
-    #     else:
-    #         previous_action, _ = self.inventory[0]
-    #         if action != Actions.HOLD.value and action != previous_action:
-    #             previous_action, open_position_price = self.inventory.pop(0)
-    #             reward, profit_loss = self.reward1(price, open_position_price, action)    
-
-    #     return reward, profit_loss
-    
-    # def reward1(self, price, open_price, action):
-    #     if action == Actions.BUY.value:  # Buy
-    #         profit_loss = open_price - price  # open_price è il prezzo a cui ho venduto prima
-    #     elif action == Actions.SELL.value:  # Sell
-    #         profit_loss = price - open_price  # open_price è il prezzo a cui ho comprato prima
-
-    #     reward = 100 if(profit_loss > 0 ) else -100
-
-    #     return 1000*profit_loss, profit_loss
 
     def update_reward(self, price, action):
         scaler = 100
@@ -167,13 +119,21 @@ class IVVEnvironment(gym.Env):
         profit_loss = 0
         net_profit = 0
 
+        previous_price = self.dataset[self.day_number][self.episode_minute - (1 if self.episode_minute != 0 else 0)][0]
+        if action == Actions.SELL.value:
+            reward = previous_price - price
+        elif action == Actions.BUY.value:
+            reward = price - previous_price
+
         if len(self.inventory) == 0:
             if action == Actions.BUY.value:
                 self.inventory.append((Actions.BUY.value, price))
                 self.actual_trades += 1
+                reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
             elif action == Actions.SELL.value:
-                self.inventory.append((Actions.SELL.value, price))
-                self.actual_trades += 1
+                #self.inventory.append((Actions.SELL.value, price))
+                #self.actual_trades += 1
+                reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
         else:
             previous_action, open_position_price = self.inventory[0]
             if action == Actions.HOLD.value:
@@ -194,14 +154,17 @@ class IVVEnvironment(gym.Env):
 
                     transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01)
                     net_profit = profit_loss - transaction_costs
-                    reward = scaler * net_profit
+                    reward = scaler * net_profit * 20
                     self.total_profit += net_profit
                     self.profit_or_loss.append(net_profit)
+                else:
+                    reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
 
-                    # if action == Actions.BUY.value:
-                    #     self.inventory.append((Actions.BUY.value, price))
-                    # elif action == Actions.SELL.value:
-                    #     self.inventory.append((Actions.SELL.value, price))
+        # total_trades = len(self.when_bought) + len(self.when_sold)
+        # if total_trades <= 8 and total_trades >= 2: reward += 0
+        # if total_trades > 8: reward += - (total_trades - 8)
+        # if done and 
+                    
         return reward, profit_loss, net_profit
 
 
@@ -209,24 +172,32 @@ class IVVEnvironment(gym.Env):
     def _get_observation(self, current_minute):    
         data = self.dataset[self.day_number]
 
-        feature_size = 5
+
+        feature_size = 3
 
         last_open_action = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
         last_open_price =  0 if len(self.inventory) == 0 else self.inventory[0][1]
-        if self.day_number == 0 and self.window_size - current_minute > 0:
-            for _ in range(abs(self.window_size - current_minute)):
-                self.moving_data.append([0 for _ in range(feature_size)])
+        if current_minute == 0:
+            for _ in range(abs(self.window_size)):
+                self.moving_data.append([
+                    0,
+                    0,
+                    0
+                ])
 
         is_increasing = data[current_minute][0]-data[current_minute - self.window_size if current_minute > 0 else 0][0]
         is_increasing = is_increasing > 0
 
-        self.moving_data.append([data[current_minute][0], 
-                          data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
-                          last_open_action,
-                          # last_open_price, # ???? 
-                          is_increasing, # Trend
-                          # risk
-                          self.actual_trades
+        self.moving_data.append([data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
+                            last_open_action,
+                            is_increasing,
+                        #    len(self.when_sold) + len(self.when_bought)
+                        #   # last_open_price, # ???? 
+                        #   # is_increasing, # Trend
+                        #   # risk
+                        #     len(self.when_sold),
+                        #     len(self.when_bought)
+                        #   (len(self.when_sold) + len(self.when_bought)) % 2,
                           ])
         
         current_window = torch.transpose(torch.tensor(self.moving_data[-self.window_size:]).to(self.device), 0, 1)
@@ -244,28 +215,6 @@ class IVVEnvironment(gym.Env):
         # print(current_window)
 
         return current_window
-
-        if from_minute>=0:
-            block = data[from_minute:current_minute + 1, :]
-        else:
-            if self.day_number > 0:
-                yesterday_data = self.dataset[self.day_number-1]
-                yesterday_data = torch.from_numpy(yesterday_data).to(self.device)
-                block = torch.cat([ yesterday_data[from_minute:], data[0:current_minute + 1 ]])
-            else:
-                block = torch.cat([ data[0].repeat(-from_minute, 1), data[0:current_minute + 1]])
-
-        res = []
-        for i in range(self.window_size):
-            # Add capital
-            #with_capital = np.append(block[i + 1].cpu().numpy() - block[i].cpu().numpy(), self.capital)
-            buy_sell_status = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
-            with_status = np.append(block[i + 1].cpu().numpy() - block[i].cpu().numpy(), buy_sell_status)
-            with_last_action_price = np.append(with_status, 0 if len(self.inventory) == 0 else self.inventory[0][1])
-            # with_capital = np.append(with_last_action_price, self.capital)
-            res.append(with_last_action_price)
-
-        return torch.transpose(torch.tensor(res).to(self.device), 0, 1)
     
     def _calculate_transaction_costs(self, price, commission_rate, spread):
         # price: price of the "buy" or "sell"
@@ -286,10 +235,10 @@ class IVVEnvironment(gym.Env):
         return total_costs
     
     def there_is_another_episode(self):
-        return self.day_number <= len(self.dataloader) - 2
+        return self.day_number <= len(self.dataset) - 2
     
     def num_of_ep(self):
-        return len(self.dataloader)
+        return len(self.dataset)
 
     '''
         Jump to the next day/episode, 
@@ -298,16 +247,13 @@ class IVVEnvironment(gym.Env):
         self.day_number += 1
         self.episode_minute = 1
         self.actual_trades = 0
-
         self.total_profit = 0
         self.inventory = []
         self.when_sold = []
         self.when_bought = []
         self.positive_trades = 0
         self.profit_or_loss = []
-
         self.buy_sell_order = []
-
         return self._get_observation(0)
     
     '''

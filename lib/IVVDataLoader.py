@@ -10,9 +10,24 @@ class IVVDataset(Dataset):
         self.dataset.isnull().values.any()
         self.dataset=self.dataset.fillna(method='ffill')
 
-        mean_close = self.dataset['Close'].mean()
-        std_close = self.dataset['Close'].std()
-        #self.dataset['Close'] = (self.dataset['Close'] - mean_close) / std_close
+        self.open = self.dataset['Open'].astype('float')
+        self.close = self.dataset['Close'].astype('float')
+        self.high = self.dataset['High'].astype('float')
+        self.low = self.dataset['Low'].astype('float')
+        self.volume = self.dataset['Volume'].astype('float')
+
+        self.dataset['bar_hc'] = self.high - self.close
+        self.dataset['bar_ho'] = self.high - self.open
+        self.dataset['bar_hl'] = self.high - self.low
+        self.dataset['bar_cl'] = self.close - self.low
+        self.dataset['bar_ol'] = self.open - self.low
+        self.dataset['bar_co'] = self.close - self.open
+        self.dataset['bar_mov'] = self.dataset['Close'] - self.dataset['Close'].shift(1)
+
+        self.dataset['adj_open'] = self.dataset['Open'] / self.close
+        self.dataset['adj_high'] = self.dataset['High'] / self.close
+        self.dataset['adj_low'] = self.dataset['Low'] / self.close
+        self.dataset['adj_close'] = self.dataset['Close'] / self.close
 
 
         # Group data by day
@@ -23,6 +38,7 @@ class IVVDataset(Dataset):
             if(len(day) > 0):
                 day_preprocessed = self._preprocess_day(day, colums_to_drop)
                 self.days.append(day_preprocessed)
+
         # random.shuffle(self.days)
 
     def _preprocess_day(self, day: pd.DataFrame, colums_to_drop: List[str]) -> pd.DataFrame:

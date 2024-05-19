@@ -45,12 +45,18 @@ class AgentCNNNetwork(AgentNetwork):
         x = self.relu(x)
         return self.fc1(x)
     
-class AgentLSTMNetwork(AgentNetwork):
+class AgentLSTMNetwork(nn.Module):
 
     def __init__(self, feature_size, window_size, action_size, device, is_eval=False):
-        super(AgentLSTMNetwork, self).__init__(feature_size, window_size, action_size, device, is_eval)
+        super(AgentLSTMNetwork, self).__init__()
+        self.feature_size = feature_size
+        self.window_size = window_size
+        self.action_size = action_size
+        self.device = device
+        self.to(device)
+        self.is_eval = is_eval
         self.hidden_size = 128
-        self.num_layers = 2
+        self.num_layers = 1
 
         self.lstm = nn.LSTM(input_size=self.feature_size, 
                             hidden_size=self.hidden_size,
