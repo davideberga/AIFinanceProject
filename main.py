@@ -45,7 +45,7 @@ def seed_everything(seed: int):
 
 window_size = 32
 batch_size = 64
-feature_size = 3
+feature_size = 5
 seed = 9
 times_update_dqn = 3
 TAU = 0.005
@@ -53,20 +53,24 @@ TAU = 0.005
 seed_everything(9)
 
 train_environment = IVVEnvironment(train_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
-validation_environment = IVVEnvironment(train_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
+train_environment.close()
+validation_environment = IVVEnvironment(validation_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 agent = DQNAgent(feature_size, window_size)
+
     
 def perform_validation(current_episode, max_episodes=-1):
     validation_environment.close()
-
+    
     total_net_profit = []
     total_profit_loss = []
     episode_count = 0
     actions_by_model = 0
     buy_actions = 0
     sell_actions = 0
+    actual_trades = []
     
     print(f'Start validation: model from ep {current_episode} on {max_episodes} days')
+    agent.evaluation_mode(True)  # Ensure the agent is in evaluation mode
     while(validation_environment.there_is_another_episode() and (max_episodes == -1 or episode_count < max_episodes)):
 
         # Reset the environment and obtain the initial observation
@@ -91,9 +95,8 @@ def perform_validation(current_episode, max_episodes=-1):
 
             observation = next_observation
 
-        # print(f"{np.sum(total_net_profit)} -  {np.sum(total_profit_loss)}")
-        episode_count+=1
-        #Ogni 250 episodi/giorni calcolo le metriche: quindi calcolo le metriche ogni anno
+        episode_count += 1
+        actual_trades.append(info["actual_trades"])
         if episode_count % 250 == 0:
 
             net_profit = np.array(total_net_profit)
@@ -104,31 +107,28 @@ def perform_validation(current_episode, max_episodes=-1):
             print(f"Profit: {np.sum(profit_loss)}")
             #Calculate Sharpe Ratio metric
             if(len(profit_loss) > 0):
-                sharpeRatio = sharpe_ratio(profit_loss,risk_free=0)
+                sharpeRatio = sharpe_ratio(profit_loss, risk_free=0)
                 print('Sharpe Ratio: ', sharpeRatio)
 
-                #Calculate Value at Risk metric
                 valueAtRisk = value_at_risk(profit_loss)
                 print('Value at Risk: ', valueAtRisk)
 
-                #Calculate Conditional Value at Risk metric
                 condValueAtRisk = conditional_value_at_risk(profit_loss)
                 print('Conditional Value at Risk: ', condValueAtRisk)
 
-            #Calculate Maximum Drawdown metric
             maxDrawdown = max_drawdown(profit_loss)
             print('Maximum Drawdown: ', maxDrawdown)
 
-            #Calculate Compounded Annual Return metric
             annualReturn = cagr(profit_loss, annualization=1)
             print('Compounded Annual Return: ', annualReturn)
 
-            #Calculate Annual Volatility metric
             annualVolatility = annual_volatility(profit_loss, annualization=1)
             print('Annual Volatility: ', annualVolatility)
-
+            
+    print(f"{np.mean(actual_trades)} trades/day")
     print(f'Buys by model {str(buy_actions)}/{str(actions_by_model)} Sells by model {str(sell_actions)}/{str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
+    agent.evaluation_mode(False)  # Reset to training mode if needed
 
 # -------- Validation finished -----------
 
@@ -189,7 +189,7 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 50 == 0:
+    if episode_count % 20 == 0:
         agent.evaluation_mode()
         perform_validation(episode_count, 251)
         agent.evaluation_mode(False)

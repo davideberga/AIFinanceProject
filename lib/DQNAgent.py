@@ -1,5 +1,5 @@
 import torch, torch.nn as nn
-from lib.AgentNetworks import AgentLSTMNetwork
+from lib.AgentNetworks import AgentLSTMNetwork, AgentCNNNetwork, AgentGRUNetwork
 import random
 import numpy as np
 from collections import deque
@@ -22,9 +22,9 @@ class DQNAgent():
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.999
 
-        self.model = AgentLSTMNetwork(self.feature_size, self.window_size, self.action_size, device, is_eval)
+        self.model = AgentCNNNetwork(self.feature_size, self.window_size, self.action_size, device)
         self.model.to(device)
-        self.target_model = AgentLSTMNetwork(self.feature_size, self.window_size, self.action_size, device, is_eval)
+        self.target_model = AgentCNNNetwork(self.feature_size, self.window_size, self.action_size, device)
         self.target_model.to(device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=0.001, amsgrad=True)
 
@@ -54,8 +54,8 @@ class DQNAgent():
             action_selected = random.randrange(self.action_size) 
         else:
             with torch.no_grad():
-                state = torch.transpose(state, 0, 1).to(device)
-                options = self.model(state.float(), 0).reshape(-1).cpu().numpy()   
+                state = torch.transpose(state, 0, 1).unsqueeze(dim=0).to(device)
+                options = self.model(state.float()).reshape(-1).cpu().numpy()   
                 action_selected = np.argmax(options)
                 buys = 1 if action_selected == 1 else 0
                 sells = 1 if action_selected == 2 else 0
@@ -74,7 +74,7 @@ class DQNAgent():
         return action_selected, action_by_model, buys, sells
 
     def expReplay(self, batch_size, times_shuffle=1):
-        loss = nn.SmoothL1Loss()
+        loss = nn.MSELoss()
         self.model.train()
         self.target_model.eval()
 
@@ -107,11 +107,11 @@ class DQNAgent():
             non_final_next_states = non_final_next_states.to(device)
 
 
-            state_action_values =  self.model(state_batch.float(), state_batch.shape[0]).gather(1, action_batch)
+            state_action_values =  self.model(state_batch.float()).gather(1, action_batch)
 
             next_state_values = torch.zeros(batch_size, device=device)
             with torch.no_grad():
-                next_state_values[non_final_mask] = self.target_model(non_final_next_states.float(), non_final_next_states.shape[0]).max(1).values
+                next_state_values[non_final_mask] = self.target_model(non_final_next_states.float()).max(1).values
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
             output = loss(expected_state_action_values.float(), state_action_values.float())

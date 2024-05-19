@@ -119,11 +119,11 @@ class IVVEnvironment(gym.Env):
         profit_loss = 0
         net_profit = 0
 
-        previous_price = self.dataset[self.day_number][self.episode_minute - (1 if self.episode_minute != 0 else 0)][0]
-        if action == Actions.SELL.value:
-            reward = previous_price - price
-        elif action == Actions.BUY.value:
-            reward = price - previous_price
+        # previous_price = self.dataset[self.day_number][self.episode_minute - (1 if self.episode_minute != 0 else 0)][0]
+        # if action == Actions.SELL.value:
+        #     reward = previous_price - price
+        # elif action == Actions.BUY.value:
+        #     reward = price - previous_price
 
         if len(self.inventory) == 0:
             if action == Actions.BUY.value:
@@ -160,10 +160,10 @@ class IVVEnvironment(gym.Env):
                 else:
                     reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
 
-        # total_trades = len(self.when_bought) + len(self.when_sold)
-        # if total_trades <= 8 and total_trades >= 2: reward += 0
-        # if total_trades > 8: reward += - (total_trades - 8)
-        # if done and 
+        total_trades = len(self.when_bought) + len(self.when_sold)
+        if total_trades <= 8 and total_trades >= 2: reward += 0
+        if total_trades > 8: reward += - (total_trades - 8) * 10
+        if total_trades < 2: reward += - 20 * 10
                     
         return reward, profit_loss, net_profit
 
@@ -173,24 +173,22 @@ class IVVEnvironment(gym.Env):
         data = self.dataset[self.day_number]
 
 
-        feature_size = 3
+        feature_size = 5
 
         last_open_action = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
         last_open_price =  0 if len(self.inventory) == 0 else self.inventory[0][1]
-        if current_minute == 0:
-            for _ in range(abs(self.window_size)):
-                self.moving_data.append([
-                    0,
-                    0,
-                    0
-                ])
+        if self.day_number == 0 and self.window_size - current_minute > 0:
+            for _ in range(abs(self.window_size - current_minute)):
+                self.moving_data.append([0 for _ in range(feature_size)])
 
         is_increasing = data[current_minute][0]-data[current_minute - self.window_size if current_minute > 0 else 0][0]
         is_increasing = is_increasing > 0
 
-        self.moving_data.append([data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
-                            last_open_action,
-                            is_increasing,
+        self.moving_data.append([data[current_minute][0],
+                                 data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
+                                 is_increasing,
+                                 last_open_action,
+                                 len(self.when_sold) + len(self.when_bought)
                         #    len(self.when_sold) + len(self.when_bought)
                         #   # last_open_price, # ???? 
                         #   # is_increasing, # Trend
@@ -275,7 +273,6 @@ class IVVEnvironment(gym.Env):
 
         self.buy_sell_order = []
 
-    # TODO
     def render(self, mode='human'):
         """Not implemented"""
         pass
