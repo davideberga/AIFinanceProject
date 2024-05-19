@@ -1,13 +1,8 @@
-import copy
-from lib.DQNAgent import DQNAgent
-from lib.IVVEnvironment import IVVEnvironment
 # Load libraries
-import numpy as np
-import pandas as pd
 from numpy.random import choice
 import random
 from gym.wrappers import FlattenObservation
-
+import time, os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,23 +10,19 @@ import matplotlib.pyplot as plt
 from torch import nn
 import torch
 from empyrical import max_drawdown, sharpe_ratio, cagr, annual_volatility, value_at_risk, conditional_value_at_risk
+from lib.AgentNetworks import AgentCNNNetwork, AgentLSTMNetwork, AgentGRUNetwork
+from lib.DQNAgent import DQNAgent
+from lib.IVVEnvironment import IVVEnvironment
 
 device = "cpu" if not torch.cuda.is_available() else 'cuda'
 #Disable the warnings
 import warnings
 warnings.filterwarnings('ignore')
 
-from lib.AgentNetworks import AgentCNNNetwork, AgentLSTMNetwork, AgentGRUNetwork
-import time
-
 train_path = "lib/data/IVV_1m_training.csv"
 validation_path = "lib/data/IVV_1m_validation.csv"
 
-def seed_everything(seed: int):
-    import random, os
-    import numpy as np
-    import torch
-    
+def seed_everything(seed: int):    
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
@@ -40,8 +31,47 @@ def seed_everything(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-# -------- Validation -----------
+def plot_reward(rewards):
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, len(rewards) + 1), rewards, linestyle='-')
+    plt.title('Training - Reward evolution')
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.grid(True)
 
+    plt.savefig('reward.png')
+    plt.show()
+
+def plot_validation(profit, net_profit, trades):
+    profit_mean = np.mean(profit)
+    trades_mean = np.mean(trades)
+
+    # Profit
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, len(profit) + 1), profit, label='Profit', linestyle='-')
+    plt.plot(range(1, len(net_profit) + 1), net_profit, label='Net Profit', linestyle='-')
+    plt.axhline(profit_mean, color='r', linestyle='--', label=f'Mean: {profit_mean:.2f}')
+    plt.title(f'Validation - Profit and Net Profit\nAnnual mean: {profit_mean}')
+    plt.xlabel('Episode')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('profit.png')
+    plt.show()
+
+    # Trades
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, len(trades) + 1), trades, linestyle='-')
+    plt.axhline(trades_mean, color='r', linestyle='--', label=f'Mean: {trades_mean:.2f}')
+    plt.title(f'Validation - Number of trades per day\nAnnual mean: {trades_mean}')
+    plt.xlabel('Episode')
+    plt.ylabel('Number of trades')
+    plt.grid(True)
+    plt.legend()
+    plt.savefig('trades.png')
+    plt.show()
+
+# -------- Validation -----------
 
 window_size = 32
 batch_size = 64
@@ -128,6 +158,10 @@ def perform_validation(current_episode, max_episodes=-1):
     print(f"{np.mean(actual_trades)} trades/day")
     print(f'Buys by model {str(buy_actions)}/{str(actions_by_model)} Sells by model {str(sell_actions)}/{str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
+
+    if max_episodes == len(validation_environment.dataset.days):
+        plot_validation(profit_loss, net_profit, actual_trades)
+
     agent.evaluation_mode(False)  # Reset to training mode if needed
 
 # -------- Validation finished -----------
@@ -136,6 +170,7 @@ def perform_validation(current_episode, max_episodes=-1):
 
 episode_count = 0
 rewards_list = []
+rewards_mean_list = []
 
 while(train_environment.there_is_another_episode()):
     # print("Running episode " + str(episode_count) + "/" + str(train_environment.num_of_ep()))
@@ -197,6 +232,9 @@ while(train_environment.there_is_another_episode()):
     net_profit = np.array(net_profit)
     profit_loss = np.array(profit_loss)
 
+    reward_mean = np.mean(rewards_list)
+    rewards_mean_list.append(reward_mean)
+
     print(f">>> EPISODE: {episode_count} <<<")
     print(f"Reward: {np.mean(rewards_list):3.5f}, Profits: {sum(profit_loss)}, BUY: {len(info['when_bought'])}, SELL: {len(info['when_sold'])}") #, Time: {time.time()-start_time}")
     
@@ -237,6 +275,10 @@ while(train_environment.there_is_another_episode()):
     
     print("\n")
 
+# PLOT REWARD
+plot_reward(rewards_mean_list)
+
+# VALIDATION
 agent.evaluation_mode()
-perform_validation(episode_count, 750)
+perform_validation(episode_count, len(validation_environment.dataset.days))
 agent.evaluation_mode(False)
