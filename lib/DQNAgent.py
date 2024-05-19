@@ -19,8 +19,8 @@ class DQNAgent():
         self.is_eval = is_eval
         self.gamma = 0.99
         self.epsilon = 1.0
-        self.epsilon_min = 0.0
-        self.epsilon_decay = 0.5
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.999
 
         self.model = AgentLSTMNetwork(self.feature_size, self.window_size, self.action_size, device, is_eval)
         self.model.to(device)
