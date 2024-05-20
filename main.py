@@ -166,6 +166,10 @@ def perform_validation(current_episode, max_episodes=-1):
     print(f'Buys by model {str(buy_actions)}/{str(actions_by_model)} Sells by model {str(sell_actions)}/{str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
 
+    # Save model 
+    print(f'>>> Saving model... <<< \n')
+    agent.save_policy(np.sum(profit_loss), np.mean(actual_trades))
+
     if max_episodes == len(validation_environment.dataset.days):
         plot_validation(total_profit_loss, total_net_profit, actual_trades)
 
@@ -217,10 +221,11 @@ while(train_environment.there_is_another_episode()):
         if done: break
 
         if len(agent.memory) > batch_size:
-            episode_loss.append(agent.expReplay(batch_size, times_update_dqn) )
+            loss = agent.learn_to_trade(batch_size, times_update_dqn)
+            episode_loss.append(loss)
 
         observation = next_observation
-        agent.epsilonDecay()
+        agent.decay()
 
     if episode_count % 10:
         target_net_state_dict = agent.model.state_dict()
@@ -231,9 +236,9 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 2 == 0:
+    if episode_count % 50 == 0:
         agent.evaluation_mode()
-        perform_validation(episode_count, -1)
+        perform_validation(episode_count, 251)
         agent.evaluation_mode(False)
 
     net_profit = np.array(net_profit)

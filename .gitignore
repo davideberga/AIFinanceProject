@@ -1,3 +1,4 @@
 lib/data/*.csv
 lib/data/*.zip
 lib/__pycache__
+models/*

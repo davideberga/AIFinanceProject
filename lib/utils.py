@@ -151,6 +151,6 @@ def statistic_analysis(data):
     print(outliers)
 
     # Decompose the stock prices into trend, seasonality, and noise components
-    result = seasonal_decompose(data['Close'], model='additive', period=20, extrapolate_trend='freq')
+    result = seasonal_decompose(data['Close'], model='additive', period=1, extrapolate_trend='freq')
     result.plot()
     plt.show()

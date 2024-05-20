@@ -36,9 +36,15 @@ class DQNAgent():
     def evaluation_mode(self, eval=True):
         self.is_eval= eval
 
-    def epsilonDecay(self):
+    def decay(self):
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+
+    def save_policy(self, profit, actual_trades):
+        torch.save(self.model.state_dict(), f"./models/policy_{np.round(actual_trades, 2)}_{np.round(profit, 2)}.pth")
+
+    def load_policy(self, path):
+        self.model.load_state_dict(torch.load(path))
 
     def act(self, state): 
         #If it is test and self.epsilon is still very high, once the epsilon become low, there are no random
@@ -73,7 +79,7 @@ class DQNAgent():
         
         return action_selected, action_by_model, buys, sells
 
-    def expReplay(self, batch_size, times_shuffle=1):
+    def learn_to_trade(self, batch_size, times_shuffle=1):
         loss = nn.MSELoss()
         self.model.train()
         self.target_model.eval()
@@ -116,7 +122,7 @@ class DQNAgent():
 
             output = loss(expected_state_action_values.float(), state_action_values.float())
             exp_repl_mean_loss += output.item()
-            
+
             self.optimizer.zero_grad()
             output.backward()
             torch.nn.utils.clip_grad_value_(self.model.parameters(), 100)
