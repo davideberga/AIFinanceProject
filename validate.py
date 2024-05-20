@@ -4,6 +4,9 @@ import numpy as np
 import torch
 from lib.DQNAgent import DQNAgent
 from lib.IVVEnvironment import IVVEnvironment
+from empyrical import max_drawdown, sharpe_ratio, cagr, annual_volatility, value_at_risk, conditional_value_at_risk
+
+from lib.utils import plot_validation
 
 def seed_everything(seed: int):    
     random.seed(seed)
@@ -27,7 +30,7 @@ device = "cpu" if not torch.cuda.is_available() else 'cuda'
 validation_path = "lib/data/IVV_1m_validation.csv"
 validation_environment = IVVEnvironment(validation_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 agent = DQNAgent(feature_size, window_size)
-agent.load_policy('./models/')
+agent.load_policy('./models/policy_6.27_4.38.pth')
 
 def perform_validation(current_episode, max_episodes=-1):
     validation_environment.close()
@@ -77,7 +80,17 @@ def perform_validation(current_episode, max_episodes=-1):
             net_profit = np.array(annual_net_profit)
             profit_loss = np.array(annual_profit_loss)
 
-            print("Happy new year")
+            print("\n Happy new year :)")
+ 
+            successRate = info["positive_trades"]/(info["actual_trades"]/2) if info["actual_trades"] != 0  else 0
+            print('Success Rate: ', successRate)
+
+            if len(net_profit) == 0:
+                netReturn = 0
+            else:
+                netReturn = sum(net_profit)/len(net_profit)
+            print('Net Return: ', netReturn)
+
             print(f"Net profit: {np.sum(net_profit)}")
             print(f"Profit: {np.sum(profit_loss)}")
             #Calculate Sharpe Ratio metric
@@ -106,3 +119,17 @@ def perform_validation(current_episode, max_episodes=-1):
     print(f"{np.mean(actual_trades)} trades/day")
     print(f'Buys by model {str(buy_actions)}/{str(actions_by_model)} Sells by model {str(sell_actions)}/{str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
+
+    # Save model 
+    print(f'>>> Saving model... <<< \n')
+    agent.save_policy(np.sum(profit_loss), np.mean(actual_trades))
+
+    if max_episodes == len(validation_environment.dataset.days):
+        plot_validation(total_profit_loss, total_net_profit, actual_trades)
+
+    agent.evaluation_mode(False)  # Reset to training mode if needed
+
+
+agent.evaluation_mode()
+perform_validation(1, len(validation_environment.dataset.days))
+agent.evaluation_mode(False)
