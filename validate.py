@@ -53,7 +53,8 @@ def perform_validation(current_episode, max_episodes=-1):
         observation = validation_environment.reset()
         agent.reset_invetory()
         info = {}
-
+        episode_net = []
+        episode_profit = []
         while True:
 
             action, action_by_model, action_buy_by_model, action_sell_by_model = agent.act(observation)
@@ -63,16 +64,18 @@ def perform_validation(current_episode, max_episodes=-1):
             next_observation, reward, done, info = validation_environment.step(action)
             
             if info['net_profit'] != 0:
-                total_net_profit.append(info['net_profit'])
+                episode_net.append(info['net_profit'])
                 annual_net_profit.append(info['net_profit'])
             if info['profit_loss'] != 0:
-                total_profit_loss.append(info['profit_loss'])
+                episode_profit.append(info['profit_loss'])
                 annual_profit_loss.append(info['profit_loss'])
-
+                
             if done: break
 
             observation = next_observation
 
+        total_net_profit.append(np.mean(episode_net))
+        total_profit_loss.append(np.mean(episode_profit))
         episode_count += 1
         actual_trades.append(info["actual_trades"])
         if episode_count % 250 == 0:
