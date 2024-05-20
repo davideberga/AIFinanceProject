@@ -75,9 +75,9 @@ def plot_validation(profit, net_profit, trades):
 
 window_size = 32
 batch_size = 64
-feature_size = 5
+feature_size = 4
 seed = 9
-times_update_dqn = 3
+times_update_dqn = 1
 TAU = 0.005
 
 seed_everything(9)
@@ -93,6 +93,8 @@ def perform_validation(current_episode, max_episodes=-1):
     
     total_net_profit = []
     total_profit_loss = []
+    annual_net_profit = []
+    annual_profit_loss = []
     episode_count = 0
     actions_by_model = 0
     buy_actions = 0
@@ -118,8 +120,10 @@ def perform_validation(current_episode, max_episodes=-1):
             
             if info['net_profit'] != 0:
                 total_net_profit.append(info['net_profit'])
+                annual_net_profit.append(info['net_profit'])
             if info['profit_loss'] != 0:
                 total_profit_loss.append(info['profit_loss'])
+                annual_profit_loss.append(info['profit_loss'])
 
             if done: break
 
@@ -129,8 +133,8 @@ def perform_validation(current_episode, max_episodes=-1):
         actual_trades.append(info["actual_trades"])
         if episode_count % 250 == 0:
 
-            net_profit = np.array(total_net_profit)
-            profit_loss = np.array(total_profit_loss)
+            net_profit = np.array(annual_net_profit)
+            profit_loss = np.array(annual_profit_loss)
 
             print("Happy new year")
             print(f"Net profit: {np.sum(net_profit)}")
@@ -154,13 +158,16 @@ def perform_validation(current_episode, max_episodes=-1):
 
             annualVolatility = annual_volatility(profit_loss, annualization=1)
             print('Annual Volatility: ', annualVolatility)
+
+            annual_net_profit = []
+            annual_profit_loss = []
             
     print(f"{np.mean(actual_trades)} trades/day")
     print(f'Buys by model {str(buy_actions)}/{str(actions_by_model)} Sells by model {str(sell_actions)}/{str(actions_by_model)}')
     print(f'>>> Validation finished! <<< \n')
 
     if max_episodes == len(validation_environment.dataset.days):
-        plot_validation(profit_loss, net_profit, actual_trades)
+        plot_validation(total_profit_loss, total_net_profit, actual_trades)
 
     agent.evaluation_mode(False)  # Reset to training mode if needed
 
@@ -183,7 +190,7 @@ while(train_environment.there_is_another_episode()):
     profit_loss = []
 
 
-    episode_loss = 0
+    episode_loss = []
     start_time = time.time()
     agent.reset_invetory()
     
@@ -210,7 +217,7 @@ while(train_environment.there_is_another_episode()):
         if done: break
 
         if len(agent.memory) > batch_size:
-            episode_loss += agent.expReplay(batch_size, times_update_dqn) 
+            episode_loss.append(agent.expReplay(batch_size, times_update_dqn) )
 
         observation = next_observation
         agent.epsilonDecay()
@@ -224,9 +231,9 @@ while(train_environment.there_is_another_episode()):
 
     episode_count += 1
 
-    if episode_count % 20 == 0:
+    if episode_count % 2 == 0:
         agent.evaluation_mode()
-        perform_validation(episode_count, 251)
+        perform_validation(episode_count, -1)
         agent.evaluation_mode(False)
 
     net_profit = np.array(net_profit)
@@ -236,7 +243,7 @@ while(train_environment.there_is_another_episode()):
     rewards_mean_list.append(reward_mean)
 
     print(f">>> EPISODE: {episode_count} <<<")
-    print(f"Reward: {np.mean(rewards_list):3.5f}, Profits: {sum(profit_loss)}, BUY: {len(info['when_bought'])}, SELL: {len(info['when_sold'])}") #, Time: {time.time()-start_time}")
+    print(f"Reward: {np.mean(rewards_list):3.5f}, Profits: {sum(profit_loss)}, BUY: {len(info['when_bought'])}, SELL: {len(info['when_sold'])}, LOSS: {np.mean(episode_loss)}") #, Time: {time.time()-start_time}")
     
     print("---- Metrics ----")
 

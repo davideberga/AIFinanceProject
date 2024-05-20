@@ -95,6 +95,11 @@ class IVVEnvironment(gym.Env):
         self.positive_trades += int(profit_loss > 0)
         self.total_profit += profit_loss
 
+        total_trades = len(self.when_bought) + len(self.when_sold)
+        if done and total_trades <= 8 and total_trades >= 2: reward += 0
+        if done and total_trades > 8: reward += - (total_trades - 8) * 10
+        if done and total_trades < 2: reward += - 200
+
         
         # if total_trades % 2 == 0: reward += 5
 
@@ -119,30 +124,24 @@ class IVVEnvironment(gym.Env):
         profit_loss = 0
         net_profit = 0
 
-        # previous_price = self.dataset[self.day_number][self.episode_minute - (1 if self.episode_minute != 0 else 0)][0]
+        previous_price = self.dataset[self.day_number][self.episode_minute - (1 if self.episode_minute != 0 else 0)][0]
         # if action == Actions.SELL.value:
         #     reward = previous_price - price
         # elif action == Actions.BUY.value:
         #     reward = price - previous_price
+        # else:
+        #     reward = 0.01
 
         if len(self.inventory) == 0:
             if action == Actions.BUY.value:
                 self.inventory.append((Actions.BUY.value, price))
                 self.actual_trades += 1
-                reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
             elif action == Actions.SELL.value:
-                #self.inventory.append((Actions.SELL.value, price))
-                #self.actual_trades += 1
-                reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
+                self.inventory.append((Actions.SELL.value, price))
+                self.actual_trades += 1
         else:
             previous_action, open_position_price = self.inventory[0]
-            if action == Actions.HOLD.value:
-                if previous_action == Actions.BUY.value:
-                    # If price increase after BUY action, HOLD is a smart thing to do
-                    reward = scaler * (price - open_position_price)
-                elif previous_action == Actions.SELL.value:
-                    # If price decrese after SELL action, so HOLD is a smart thing to do
-                    reward = scaler * (open_position_price - price)
+            if action == Actions.HOLD.value: reward = 0
             else:
                 if action != previous_action:
                     self.inventory.pop(0)
@@ -154,16 +153,44 @@ class IVVEnvironment(gym.Env):
 
                     transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01)
                     net_profit = profit_loss - transaction_costs
-                    reward = scaler * net_profit * 20
+                    if profit_loss > 0: reward = profit_loss
                     self.total_profit += net_profit
                     self.profit_or_loss.append(net_profit)
-                else:
-                    reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
 
-        total_trades = len(self.when_bought) + len(self.when_sold)
-        if total_trades <= 8 and total_trades >= 2: reward += 0
-        if total_trades > 8: reward += - (total_trades - 8) * 10
-        if total_trades < 2: reward += - 20 * 10
+        # if len(self.inventory) == 0:
+        #     if action == Actions.BUY.value:
+        #         self.inventory.append((Actions.BUY.value, price))
+        #         self.actual_trades += 1
+        #         reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
+        #     elif action == Actions.SELL.value:
+        #         self.inventory.append((Actions.SELL.value, price))
+        #         self.actual_trades += 1
+        #         reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01)
+        # else:
+        #     previous_action, open_position_price = self.inventory[0]
+        #     if action == Actions.HOLD.value:
+        #         if previous_action == Actions.BUY.value:
+        #             # If price increase after BUY action, HOLD is a smart thing to do
+        #             reward = scaler * (price - open_position_price)
+        #         elif previous_action == Actions.SELL.value:
+        #             # If price decrese after SELL action, so HOLD is a smart thing to do
+        #             reward = scaler * (open_position_price - price)
+        #     else:
+        #         if action != previous_action:
+        #             self.inventory.pop(0)
+        #             self.actual_trades += 1
+        #             if action == Actions.SELL.value:
+        #                 profit_loss = price - open_position_price
+        #             elif action == Actions.BUY.value:
+        #                 profit_loss = open_position_price - price
+
+        #             transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01)
+        #             net_profit = profit_loss - transaction_costs
+        #             reward = scaler * profit_loss * 20
+        #             self.total_profit += net_profit
+        #             self.profit_or_loss.append(net_profit)
+        #         else:
+        #             reward += - self._calculate_transaction_costs(price, self.trading_cost, 0.01) * scaler
                     
         return reward, profit_loss, net_profit
 
@@ -173,7 +200,7 @@ class IVVEnvironment(gym.Env):
         data = self.dataset[self.day_number]
 
 
-        feature_size = 5
+        feature_size = 4
 
         last_open_action = 0 if len(self.inventory) == 0 else ( 1 if self.inventory[0][0] == Actions.BUY.value else -1)
         last_open_price =  0 if len(self.inventory) == 0 else self.inventory[0][1]
@@ -184,8 +211,7 @@ class IVVEnvironment(gym.Env):
         is_increasing = data[current_minute][0]-data[current_minute - self.window_size if current_minute > 0 else 0][0]
         is_increasing = is_increasing > 0
 
-        self.moving_data.append([data[current_minute][0],
-                                 data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
+        self.moving_data.append([data[current_minute][0]-data[current_minute - 1 if current_minute > 0 else 0][0],
                                  is_increasing,
                                  last_open_action,
                                  len(self.when_sold) + len(self.when_bought)

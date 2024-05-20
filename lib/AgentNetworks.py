@@ -59,7 +59,6 @@ class AgentLSTMNetwork(nn.Module):
 
         self.lstm = nn.LSTM(input_size=self.feature_size, 
                             hidden_size=self.hidden_size,
-                            num_layers=self.num_layers, 
                             batch_first=True)
         self.fc_1 = nn.Linear(self.hidden_size, 64)
         self.fc = nn.Linear(64, self.action_size)
@@ -68,18 +67,13 @@ class AgentLSTMNetwork(nn.Module):
         self.to(device)
 
     def forward(self, x):
-        batch_size = x.size(0)
-        
-        h_0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32).to(self.device)
-        c_0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32).to(self.device)
-
-        output, _ = self.lstm(x, (h_0, c_0))
-        
+        output, _ = self.lstm(x)
         # Take the output of the last time step
         out = self.relu(output[:, -1, :])
         out = self.fc_1(out)
         out = self.relu(out)
         out = self.fc(out)
+        #print(out.shape)
         return out
     
 
@@ -103,7 +97,7 @@ class AgentGRUNetwork(AgentNetwork):
         
     
     def forward(self,x, batch_size):
-        initial_hidden = torch.zeros(self.num_layers, self.hidden_size, dtype=torch.float32).to(self.device) if batch_size == 0 else torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32).to(self.device)
+        initial_hidden = torch.zeros(self.num_layers, self.hidden_size, dtype=torch.float32).to(self.device) if batch_size == 0 else 0
         x, h = self.gru(x, initial_hidden)
         x = self.relu(self.fc_1( x[-1] if batch_size == 0 else x[:, -1, :]))
         x = self.relu(self.fc_2(x))

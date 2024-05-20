@@ -22,11 +22,11 @@ class DQNAgent():
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.999
 
-        self.model = AgentCNNNetwork(self.feature_size, self.window_size, self.action_size, device)
+        self.model = AgentLSTMNetwork(self.feature_size, self.window_size, self.action_size, device)
         self.model.to(device)
-        self.target_model = AgentCNNNetwork(self.feature_size, self.window_size, self.action_size, device)
+        self.target_model = AgentLSTMNetwork(self.feature_size, self.window_size, self.action_size, device)
         self.target_model.to(device)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=0.001, amsgrad=True)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
 
         self.agent_inventory = []
 
@@ -115,6 +115,7 @@ class DQNAgent():
             expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
             output = loss(expected_state_action_values.float(), state_action_values.float())
+            exp_repl_mean_loss += output.item()
             
             self.optimizer.zero_grad()
             output.backward()
