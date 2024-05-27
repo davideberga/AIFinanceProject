@@ -153,7 +153,7 @@ class IVVEnvironment(gym.Env):
                         profit_loss = open_position_price - price
                         self.when_bought.append(self.episode_minute)
 
-                    transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01, fixed_cost=0.1) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01, fixed_cost=0.1)
+                    transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01)
                     net_profit = profit_loss - transaction_costs
                     if profit_loss > 0: reward = profit_loss
                     self.total_profit += net_profit

@@ -35,7 +35,7 @@ TAU = 0.005
 
 seed_everything(9)
 
-train_environment = IVVEnvironment([train_path, validation_path], seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
+train_environment = IVVEnvironment(train_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 train_environment.close()
 validation_environment = IVVEnvironment(test_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 agent = DQNAgent(feature_size, window_size)

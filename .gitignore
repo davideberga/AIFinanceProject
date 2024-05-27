@@ -3,3 +3,4 @@ lib/data/*.zip
 lib/__pycache__
 models/*
 storage_val/*.pth
+storage_train_test/*.pth
