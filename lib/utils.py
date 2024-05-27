@@ -44,12 +44,14 @@ def plot_validation(profit, net_profit, trades):
     profit_mean = np.mean(profit)
     trades_mean = np.mean(trades)
 
+    print(profit)
+
     # Profit
     plt.figure(figsize=(10, 5))
     plt.plot(range(1, len(profit) + 1), profit, label='Profit', linestyle='-')
     plt.plot(range(1, len(net_profit) + 1), net_profit, label='Net Profit', linestyle='-')
     plt.axhline(profit_mean, color='r', linestyle='--', label=f'Mean: {profit_mean:.2f}')
-    plt.title(f'Validation - Profit and Net Profit\nAnnual mean: {profit_mean}')
+    plt.title(f'Profit and Net Profit\nAnnual mean: {profit_mean}')
     plt.xlabel('Episode')
     plt.ylabel('Value')
     plt.legend()
@@ -57,12 +59,14 @@ def plot_validation(profit, net_profit, trades):
     plt.savefig('profit.png')
     plt.show()
 
+    print(trades)
+
     # Trades
     plt.figure(figsize=(10, 5))
-    plt.plot(range(1, len(trades) + 1), trades, linestyle='-')
+    plt.bar(range(1, len(trades) + 1), trades)
     plt.axhline(trades_mean, color='r', linestyle='--', label=f'Mean: {trades_mean:.2f}')
-    plt.title(f'Validation - Number of trades per day\nAnnual mean: {trades_mean}')
-    plt.xlabel('Episode')
+    plt.title(f'Number of trades per day\nAnnual mean: {trades_mean}')
+    plt.xlabel('Episodes')
     plt.ylabel('Number of trades')
     plt.grid(True)
     plt.legend()

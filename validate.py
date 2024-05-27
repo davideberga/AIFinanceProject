@@ -1,3 +1,4 @@
+import math
 import random
 import os
 import numpy as np
@@ -27,16 +28,17 @@ TAU = 0.005
 seed_everything(9)
 device = "cpu" if not torch.cuda.is_available() else 'cuda'
 
-validation_path = "lib/data/IVV_1m_validation.csv"
+validation_path = "lib/data/IVV_test_sample.csv"
 validation_environment = IVVEnvironment(validation_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 agent = DQNAgent(feature_size, window_size)
-agent.load_policy('./models/policy_6.27_4.38.pth')
+agent.load_policy('./models/policy_4.45_84.99.pth')
 
 def perform_validation(current_episode, max_episodes=-1):
     validation_environment.close()
     
     total_net_profit = []
     total_profit_loss = []
+    total_actual_trades = []
     annual_net_profit = []
     annual_profit_loss = []
     episode_count = 0
@@ -44,6 +46,7 @@ def perform_validation(current_episode, max_episodes=-1):
     buy_actions = 0
     sell_actions = 0
     actual_trades = []
+    positive_trades = 0
     
     print(f'Start validation: model from ep {current_episode} on {max_episodes} days')
     agent.evaluation_mode(True)  # Ensure the agent is in evaluation mode
@@ -63,10 +66,10 @@ def perform_validation(current_episode, max_episodes=-1):
             sell_actions += action_sell_by_model
             next_observation, reward, done, info = validation_environment.step(action)
             
-            if info['net_profit'] != 0:
+            if info['net_profit'] != 0 and not math.isnan(info['net_profit']):
                 episode_net.append(info['net_profit'])
                 annual_net_profit.append(info['net_profit'])
-            if info['profit_loss'] != 0:
+            if info['profit_loss'] != 0 and not math.isnan(info['profit_loss']):
                 episode_profit.append(info['profit_loss'])
                 annual_profit_loss.append(info['profit_loss'])
                 
@@ -74,18 +77,21 @@ def perform_validation(current_episode, max_episodes=-1):
 
             observation = next_observation
 
+        positive_trades += info["positive_trades"]
         total_net_profit.append(np.mean(episode_net))
         total_profit_loss.append(np.mean(episode_profit))
         episode_count += 1
         actual_trades.append(info["actual_trades"])
-        if episode_count % 250 == 0:
+        total_actual_trades.append(info["actual_trades"])
+
+        if episode_count % 249 == 0:
 
             net_profit = np.array(annual_net_profit)
             profit_loss = np.array(annual_profit_loss)
 
             print("\n Happy new year :)")
  
-            successRate = info["positive_trades"]/(info["actual_trades"]/2) if info["actual_trades"] != 0  else 0
+            successRate = positive_trades/(np.sum(actual_trades)/2) if np.sum(actual_trades) > 0  else 0
             print('Success Rate: ', successRate)
 
             if len(net_profit) == 0:
@@ -116,8 +122,10 @@ def perform_validation(current_episode, max_episodes=-1):
             annualVolatility = annual_volatility(profit_loss, annualization=1)
             print('Annual Volatility: ', annualVolatility)
 
+            positive_trades = 0
             annual_net_profit = []
             annual_profit_loss = []
+            actual_trades = []
             
     print(f"{np.mean(actual_trades)} trades/day")
     print(f'Buys by model {str(buy_actions)}/{str(actions_by_model)} Sells by model {str(sell_actions)}/{str(actions_by_model)}')
@@ -128,7 +136,7 @@ def perform_validation(current_episode, max_episodes=-1):
     agent.save_policy(np.sum(profit_loss), np.mean(actual_trades))
 
     if max_episodes == len(validation_environment.dataset.days):
-        plot_validation(total_profit_loss, total_net_profit, actual_trades)
+        plot_validation(total_profit_loss, total_net_profit, total_actual_trades)
 
     agent.evaluation_mode(False)  # Reset to training mode if needed
 

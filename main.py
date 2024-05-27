@@ -13,7 +13,7 @@ from empyrical import max_drawdown, sharpe_ratio, cagr, annual_volatility, value
 from lib.AgentNetworks import AgentCNNNetwork, AgentLSTMNetwork, AgentGRUNetwork
 from lib.DQNAgent import DQNAgent
 from lib.IVVEnvironment import IVVEnvironment
-from lib.utils import plot_reward, seed_everything
+from lib.utils import plot_reward, plot_validation, seed_everything
 
 device = "cpu" if not torch.cuda.is_available() else 'cuda'
 #Disable the warnings
@@ -22,6 +22,7 @@ warnings.filterwarnings('ignore')
 
 train_path = "lib/data/IVV_1m_training.csv"
 validation_path = "lib/data/IVV_1m_validation.csv"
+test_path = "lib/data/IVV_test_sample.csv"
 
 # -------- Validation -----------
 
@@ -29,14 +30,14 @@ window_size = 32
 batch_size = 64
 feature_size = 4
 seed = 9
-times_update_dqn = 1
+times_update_dqn = 2
 TAU = 0.005
 
 seed_everything(9)
 
-train_environment = IVVEnvironment(train_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
+train_environment = IVVEnvironment([train_path, validation_path], seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 train_environment.close()
-validation_environment = IVVEnvironment(validation_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
+validation_environment = IVVEnvironment(test_path, seed=seed, device=device, window_size=window_size, trading_cost=1e-3)
 agent = DQNAgent(feature_size, window_size)
 
     

@@ -84,10 +84,10 @@ class IVVEnvironment(gym.Env):
         
         reward = 0
         if action == Actions.BUY.value:
-            self.when_bought.append(self.episode_minute)
+            
             self.buy_sell_order.append('BUY')
         elif action == Actions.SELL.value:
-            self.when_sold.append(self.episode_minute)
+  
             self.buy_sell_order.append('SELL') 
 
         reward, profit_loss, net_profit = self.update_reward(current_price, action)
@@ -99,9 +99,7 @@ class IVVEnvironment(gym.Env):
         if done and total_trades <= 8 and total_trades >= 2: reward += 0
         if done and total_trades > 8: reward += - (total_trades - 8) * 10
         if done and total_trades < 2: reward += - 200
-
-        
-        # if total_trades % 2 == 0: reward += 5
+        if done and len(self.when_bought) != len(self.when_sold): reward -= 50
 
 
         info = {
@@ -136,9 +134,11 @@ class IVVEnvironment(gym.Env):
             if action == Actions.BUY.value:
                 self.inventory.append((Actions.BUY.value, price))
                 self.actual_trades += 1
+                self.when_bought.append(self.episode_minute)
             elif action == Actions.SELL.value:
                 self.inventory.append((Actions.SELL.value, price))
                 self.actual_trades += 1
+                self.when_sold.append(self.episode_minute)
         else:
             previous_action, open_position_price = self.inventory[0]
             if action == Actions.HOLD.value: reward = 0
@@ -148,10 +148,12 @@ class IVVEnvironment(gym.Env):
                     self.actual_trades += 1
                     if action == Actions.SELL.value:
                         profit_loss = price - open_position_price
+                        self.when_sold.append(self.episode_minute)
                     elif action == Actions.BUY.value:
                         profit_loss = open_position_price - price
+                        self.when_bought.append(self.episode_minute)
 
-                    transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01)
+                    transaction_costs = self._calculate_transaction_costs(price, self.trading_cost, 0.01, fixed_cost=0.1) + self._calculate_transaction_costs(open_position_price, self.trading_cost, 0.01, fixed_cost=0.1)
                     net_profit = profit_loss - transaction_costs
                     if profit_loss > 0: reward = profit_loss
                     self.total_profit += net_profit
@@ -240,12 +242,15 @@ class IVVEnvironment(gym.Env):
 
         return current_window
     
-    def _calculate_transaction_costs(self, price, commission_rate, spread):
+    def _calculate_transaction_costs(self, price, commission_rate, spread, fixed_cost=None):
         # price: price of the "buy" or "sell"
         # commission_rate: scalar representing the commission rate per trade
         # spread: scalar representing the bid-ask spread --> The difference between the bid and ask prices of a security. 
         #                                                    When traders buy at the ask price and sell at the bid price, 
         #                                                    they incur a cost equal to the spread.
+
+        if fixed_cost != None:
+            return fixed_cost
 
         # Calculate commission costs
         commission_costs = price * commission_rate

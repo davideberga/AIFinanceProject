@@ -6,7 +6,17 @@ from torch.utils.data import Dataset
 
 class IVVDataset(Dataset):
     def __init__(self, file_csv, colums_to_drop=[]):
-        self.dataset = read_csv(file_csv, index_col=0, parse_dates=[0], header=0)
+
+        if isinstance(file_csv, list):
+            accumulator = []
+            for csv in file_csv:
+                df = read_csv(csv, index_col=0, parse_dates=[0], header=0)
+                accumulator.append(df)
+            self.dataset = pd.concat(accumulator, axis=0)
+        else:
+            self.dataset = read_csv(file_csv, index_col=0, parse_dates=[0], header=0)
+
+        
         self.dataset.isnull().values.any()
         self.dataset=self.dataset.fillna(method='ffill')
 
