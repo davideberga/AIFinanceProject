@@ -44,8 +44,6 @@ def plot_validation(profit, net_profit, trades):
     profit_mean = np.mean(profit)
     trades_mean = np.mean(trades)
 
-    print(profit)
-
     # Profit
     plt.figure(figsize=(10, 5))
     plt.plot(range(1, len(profit) + 1), profit, label='Profit', linestyle='-')
@@ -59,8 +57,6 @@ def plot_validation(profit, net_profit, trades):
     plt.savefig('profit.png')
     plt.show()
 
-    print(trades)
-
     # Trades
     plt.figure(figsize=(10, 5))
     plt.bar(range(1, len(trades) + 1), trades)
@@ -72,6 +68,15 @@ def plot_validation(profit, net_profit, trades):
     plt.legend()
     plt.savefig('trades.png')
     plt.show()
+
+def plot_best(episode, series, profit, buy, sell):
+    fig = plt.figure(figsize = (15,5))
+    plt.plot(series, color='r', lw=2.)
+    plt.plot(series, 'o', markersize=10, color='m', label = 'Buying signal', markevery = buy)
+    plt.plot(series, 'o', markersize=10, color='k', label = 'Selling signal', markevery = sell)
+    plt.title('Total gains: %f'%(profit))
+    plt.legend()
+    plt.savefig('lib/'+str(episode)+'.png')
 
 def data_info(filepath):
     data = pd.read_csv(filepath, sep=',', parse_dates=['DateTime'], index_col='DateTime')

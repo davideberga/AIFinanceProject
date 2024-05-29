@@ -7,7 +7,7 @@ from lib.DQNAgent import DQNAgent
 from lib.IVVEnvironment import IVVEnvironment
 from empyrical import max_drawdown, sharpe_ratio, cagr, annual_volatility, value_at_risk, conditional_value_at_risk
 
-from lib.utils import plot_validation
+from lib.utils import plot_validation, plot_best
 
 def seed_everything(seed: int):    
     random.seed(seed)
@@ -71,8 +71,7 @@ def perform_validation(current_episode, max_episodes=-1):
                 annual_net_profit.append(info['net_profit'])
             if info['profit_loss'] != 0 and not math.isnan(info['profit_loss']):
                 episode_profit.append(info['profit_loss'])
-                annual_profit_loss.append(info['profit_loss'])
-                
+                annual_profit_loss.append(info['profit_loss'])                
             if done: break
 
             observation = next_observation
@@ -80,6 +79,12 @@ def perform_validation(current_episode, max_episodes=-1):
         positive_trades += info["positive_trades"]
         total_net_profit.append(np.mean(episode_net))
         total_profit_loss.append(np.mean(episode_profit))
+
+        best_series = validation_environment.dataset.days[episode_count]['Close']
+
+        if episode_count <= 20:
+            plot_best(episode_count, best_series, np.mean(episode_profit), info['when_bought'], info['when_sold'])
+
         episode_count += 1
         actual_trades.append(info["actual_trades"])
         total_actual_trades.append(info["actual_trades"])
